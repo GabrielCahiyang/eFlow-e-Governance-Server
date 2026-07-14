@@ -17,6 +17,112 @@ This system serves as a centralized command center for your local AI backend. It
 
 ---
 
+## 🔌 API Guide: How to Use the Models
+
+The local backend acts as an API server on port `8321`. It is fully compatible with standard chat completion formats (like Ollama). All API endpoints are grouped under the `/controlpanelEflow` prefix to ensure secure routing.
+
+### 1. Authentication
+Every request to the backend requires an API key in the `Authorization` header. You can generate and view this key in the Control Dashboard under **API Key Management**.
+
+```http
+Authorization: Bearer <YOUR_API_KEY>
+```
+
+### 2. Base Endpoint
+If you are querying the backend directly from another application:
+```text
+http://127.0.0.1:8321/controlpanelEflow
+```
+
+### 3. Generate a Chat Completion (`/api/chat`)
+This is the primary endpoint to interact with the active models. Only models that are toggled to "ON" in the Control Dashboard can be queried. 
+
+**POST** `http://127.0.0.1:8321/controlpanelEflow/api/chat`
+
+**Request Body (JSON):**
+```json
+{
+  "model": "llama3:8b",
+  "messages": [
+    { "role": "system", "content": "You are a helpful coding assistant." },
+    { "role": "user", "content": "Write a python script to reverse a string." }
+  ],
+  "stream": true 
+}
+```
+
+> **Note on `stream`**: By default, streaming is enabled. Responses will be returned as newline-delimited JSON (`application/x-ndjson`) chunk by chunk. Set `"stream": false` if you want a single, complete response object at the end.
+
+**Example using `curl`:**
+```bash
+curl -X POST http://127.0.0.1:8321/controlpanelEflow/api/chat \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "deepseek-r1:8b",
+    "messages": [{"role": "user", "content": "What is 2+2?"}],
+    "stream": false
+  }'
+```
+
+**Example: TypeScript Integration (Eflow System)**
+Here is a real-world example of how the Eflow System queries the backend to evaluate and recommend employees for tasks using structured JSON output.
+
+```typescript
+const API_BASE = (import.meta.env.VITE_LLM_BASE_URL || "/api").replace(/\/$/, "");
+const CHAT_ENDPOINT = `${API_BASE}/chat`;
+const LLM_MODEL = "deepseek-r1:8b"; // Or any active model
+
+export const recommendAssignee = async (task: Task, employees: Employee[]) => {
+  const prompt = `You are an AI assistant helping assign tasks...
+  Output your response as a strict JSON object...`;
+
+  try {
+    const runtimeToken = await fetchAuthKey(); // Fetch from /api/authkey
+    const response = await fetch(CHAT_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(runtimeToken ? { Authorization: `Bearer ${runtimeToken}` } : {}),
+      },
+      body: JSON.stringify({
+        model: LLM_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        stream: false, // For structured JSON data, wait for the full response
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    const contentString = data.message?.content || "";
+
+    // Extract JSON (DeepSeek sometimes wraps in markdown code blocks)
+    const jsonMatch = contentString.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    return null;
+  } catch (error) {
+    console.error("Failed to fetch LLM recommendation:", error);
+    return null;
+  }
+};
+```
+
+### 4. Fetch Available Models (`/api/tags`)
+Get a list of all models registered and available for download/use.
+
+**GET** `http://127.0.0.1:8321/controlpanelEflow/api/tags`
+*Response contains an array of model objects including their download status and VRAM size requirements.*
+
+### 5. Check Running Models (`/api/ps`)
+See which model is currently loaded into VRAM. Note: The system unloads and hot-swaps models automatically depending on the incoming requests.
+
+**GET** `http://127.0.0.1:8321/controlpanelEflow/api/ps`
+
+---
+
 ## 📋 Requirements
 
 - **Python 3.10+** — [Download Python](https://www.python.org/downloads/)
@@ -179,8 +285,13 @@ server\.venv\Scripts\pip.exe install https://github.com/abetlen/llama-cpp-python
 
 # For CUDA 12.6 (RTX 40xx and newer) — replace cu124 with cu126 in the URL
 ```
+### Step 7 — Update If available
 
-### Step 7 — Verify GPU is Active
+```powershell
+server\.venv\Scripts\python.exe -m pip install llama-cpp-python --upgrade --force-reinstall --no-cache-dir
+```
+
+### Step 8 — Verify GPU is Active
 
 ```powershell
 server\.venv\Scripts\python.exe -c "from llama_cpp import llama_supports_gpu_offload; print(llama_supports_gpu_offload())"

@@ -8,8 +8,8 @@ auto-downloaded from HuggingFace on first use.
 All endpoints are served under the /controlpanelEflow/ prefix.
 Every request must include  Authorization: Bearer <API_KEY>.
 
-The API key is fetched from Firebase Realtime Database at the path
-specified in FIREBASE_AUTHKEY_PATH (default: "config/authKey").
+The API key is read from the Supabase `app_config` table at startup
+(key = 'llm_auth_key').  Run the SQL in README to create that row.
 
 Endpoints (under /controlpanelEflow)
 ────────────────────────────────────
@@ -19,6 +19,8 @@ GET  /api/ps            — currently loaded model  (Ollama /api/ps format)
 POST /api/chat          — streaming chat completion (NDJSON, Ollama format)
 POST /api/download      — trigger model download
 GET  /AUTHKEY           — fetch API key (no auth required)
+GET  /api/authkey       — alias for /AUTHKEY
+PUT  /api/authkey       — update auth key in Supabase app_config
 """
 
 import os
@@ -47,7 +49,7 @@ from model_registry import (
 from server_logging import (
     LogBuffer,
     SSEManager,
-    FirebaseLogWriter,
+    SupabaseLogWriter,
     BufferAndBroadcastHandler,
     make_entry,
     LOG_TYPE_CHAT,
@@ -56,15 +58,13 @@ from server_logging import (
 # ── Load environment variables ────────────────────────────────────────
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-# Firebase Realtime Database REST API configuration
-FIREBASE_DATABASE_URL: str = os.getenv("VITE_FIREBASE_DATABASE_URL", "")
-FIREBASE_DB_AUTH_TOKEN: str = os.getenv("FIREBASE_DB_AUTH_TOKEN", "")
-FIREBASE_AUTHKEY_PATH: str = (
-    "AUTHKEY"  # Path in database where auth key is stored
-)
+SUPABASE_URL: str = os.getenv("VITE_SUPABASE_URL", "")
+SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
-if not FIREBASE_DATABASE_URL:
-    raise RuntimeError("VITE_FIREBASE_DATABASE_URL not set in .env!")
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+    raise RuntimeError(
+        "VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in .env!"
+    )
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,9 +75,9 @@ logger = logging.getLogger(__name__)
 # ── Server-wide logging infrastructure ────────────────────────────────
 log_buffer = LogBuffer(maxlen=500)
 sse_manager = SSEManager()
-firebase_log_writer = FirebaseLogWriter(
-    database_url=FIREBASE_DATABASE_URL,
-    auth_token=FIREBASE_DB_AUTH_TOKEN,
+supabase_log_writer = SupabaseLogWriter(
+    supabase_url=SUPABASE_URL,
+    service_role_key=SUPABASE_SERVICE_ROLE_KEY,
 )
 
 # Attach the custom handler to the root logger so we capture everything
@@ -85,7 +85,7 @@ firebase_log_writer = FirebaseLogWriter(
 _handler = BufferAndBroadcastHandler(
     log_buffer=log_buffer,
     sse_manager=sse_manager,
-    firebase_writer=firebase_log_writer,
+    firebase_writer=supabase_log_writer,  # param name kept for compat
 )
 _handler.setFormatter(logging.Formatter("%(asctime)s  %(levelname)-8s  %(message)s"))
 logging.getLogger().addHandler(_handler)
@@ -94,18 +94,15 @@ logging.getLogger().addHandler(_handler)
 for _uvi_name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
     logging.getLogger(_uvi_name).addHandler(_handler)
 
-logger.info(f"Firebase Database: {FIREBASE_DATABASE_URL}")
-logger.info(f"Auth Key Path: {FIREBASE_AUTHKEY_PATH}")
+logger.info(f"Supabase URL: {SUPABASE_URL}")
 
 
-# ── API Key Cache (to avoid constant DB reads) ────────────────────────
+# ── API Key Cache (to avoid hammering Supabase on every request) ──────
 _api_key_cache = {"value": None, "timestamp": 0, "ttl_seconds": 300}  # 5 min TTL
 
 
 async def get_cached_api_key() -> Optional[str]:
-    """Fetch API key from Firebase Realtime Database using REST API."""
-    import time
-
+    """Fetch the LLM auth key from Supabase app_config table (cached)."""
     current_time = time.time()
 
     # Return cached key if still valid
@@ -115,27 +112,32 @@ async def get_cached_api_key() -> Optional[str]:
     ):
         return _api_key_cache["value"]
 
-    # Fetch from Firebase Realtime Database REST API
+    # Fetch from Supabase via PostgREST REST API
     try:
-        auth_query = f"?auth={FIREBASE_DB_AUTH_TOKEN}" if FIREBASE_DB_AUTH_TOKEN else ""
-        url = f"{FIREBASE_DATABASE_URL.rstrip('/')}/{FIREBASE_AUTHKEY_PATH}.json{auth_query}"
+        url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/app_config?key=eq.llm_auth_key&select=value"
+        headers = {
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        }
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            async with session.get(
+                url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
                 if resp.status == 200:
-                    api_key = await resp.text()
-                    # Remove quotes if present
-                    api_key = api_key.strip('"')
-                    if api_key:
+                    data = await resp.json()
+                    if data and isinstance(data, list) and data[0].get("value"):
+                        api_key = data[0]["value"].strip()
                         _api_key_cache["value"] = api_key
                         _api_key_cache["timestamp"] = current_time
-                        logger.debug(
-                            f"Fetched auth key from Firebase: {FIREBASE_AUTHKEY_PATH}"
-                        )
+                        logger.debug("Fetched auth key from Supabase app_config")
                         return api_key
+                else:
+                    body = await resp.text()
+                    logger.error(f"Supabase app_config fetch failed {resp.status}: {body[:200]}")
     except Exception as e:
-        logger.error(f"Failed to fetch API key from Firebase: {e}")
+        logger.error(f"Failed to fetch API key from Supabase: {e}")
 
-    # Return cached value even if expired, as fallback
+    # Return stale cached value as last resort
     if _api_key_cache["value"]:
         logger.warning("Using stale cached API key")
         return _api_key_cache["value"]
@@ -143,13 +145,13 @@ async def get_cached_api_key() -> Optional[str]:
     return None
 
 
-# ── Firebase API-key auth middleware ──────────────────────────────────
+# ── Supabase API-key auth middleware ──────────────────────────────────
 
 
-class FirebaseKeyAuthMiddleware(BaseHTTPMiddleware):
+class SupabaseKeyAuthMiddleware(BaseHTTPMiddleware):
     """
     Reject any request that does not carry
-    Authorization: Bearer <FIREBASE_API_KEY>.
+    Authorization: Bearer <llm_auth_key from Supabase app_config>.
     """
 
     async def dispatch(self, request: Request, call_next):
@@ -170,7 +172,7 @@ class FirebaseKeyAuthMiddleware(BaseHTTPMiddleware):
                 status_code=401,
             )
 
-        if not auth_header.startswith("Bearer ") or auth_header[7:] != expected_key:
+        if not auth_header.startswith("Bearer ") or auth_header[7:].strip() != expected_key:
             return JSONResponse(
                 {"error": "Unauthorized – invalid or missing API key"},
                 status_code=401,
@@ -258,10 +260,19 @@ async def lifespan(app: FastAPI):
     logger.info("LLM Backend starting …")
     logger.info(f"Route prefix : {ROUTE_PREFIX}")
     logger.info(f"Registered models: {[m.tag for m in list_all_models()]}")
+    # Pre-warm the auth key cache at startup
+    key = await get_cached_api_key()
+    if key:
+        logger.info("Auth key loaded from Supabase app_config.")
+    else:
+        logger.warning(
+            "Could not load auth key from Supabase. "
+            "Ensure the app_config table has a row with key='llm_auth_key'."
+        )
     yield
     manager.unload()
     logger.info("LLM Backend shut down.")
-    await firebase_log_writer.close()
+    await supabase_log_writer.close()
 
 
 app = FastAPI(title="Local LLM Backend", lifespan=lifespan)
@@ -274,7 +285,7 @@ app.add_middleware(
 )
 
 # Auth middleware — applied after CORS so preflight OPTIONS still works
-app.add_middleware(FirebaseKeyAuthMiddleware)
+app.add_middleware(SupabaseKeyAuthMiddleware)
 
 # All routes go on a sub-router mounted at /controlpanelEflow
 router = APIRouter()
@@ -358,16 +369,16 @@ async def log_stream():
     )
 
 
-# ── Get Auth Key ───────────────────────────────────────────────────────
+# ── Get / Update Auth Key ─────────────────────────────────────────────
 
 
 @router.get("/AUTHKEY")
 async def get_auth_key():
-    """Returns the API key from Firebase Realtime Database."""
+    """Returns the LLM API key from Supabase app_config."""
     api_key = await get_cached_api_key()
     if not api_key:
         return JSONResponse(
-            {"error": "Failed to retrieve API key"},
+            {"error": "Failed to retrieve API key from Supabase app_config"},
             status_code=500,
         )
     return {"api_key": api_key}
@@ -381,7 +392,7 @@ async def get_auth_key_api():
 
 @router.put("/api/authkey")
 async def update_auth_key(request: Request):
-    """Update the API key in Firebase Realtime Database."""
+    """Update the API key in Supabase app_config table."""
     body = await request.json()
     new_key = body.get("api_key", "")
     if not new_key or not isinstance(new_key, str) or len(new_key) < 4:
@@ -391,26 +402,33 @@ async def update_auth_key(request: Request):
         )
 
     try:
-        auth_query = f"?auth={FIREBASE_DB_AUTH_TOKEN}" if FIREBASE_DB_AUTH_TOKEN else ""
-        url = f"{FIREBASE_DATABASE_URL.rstrip('/')}/{FIREBASE_AUTHKEY_PATH}.json{auth_query}"
+        url = f"{SUPABASE_URL.rstrip('/')}/rest/v1/app_config?key=eq.llm_auth_key"
+        headers = {
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        }
+        payload = {"value": new_key, "updated_at": "now()"}
         async with aiohttp.ClientSession() as session:
-            async with session.put(
+            async with session.patch(
                 url,
-                json=new_key,
+                json=payload,
+                headers=headers,
                 timeout=aiohttp.ClientTimeout(total=5),
             ) as resp:
                 if resp.status >= 400:
                     body_text = await resp.text()
-                    logger.error(f"Failed to update auth key in Firebase: {resp.status} {body_text}")
+                    logger.error(f"Failed to update auth key in Supabase: {resp.status} {body_text}")
                     return JSONResponse(
-                        {"error": f"Firebase write failed: {resp.status}"},
+                        {"error": f"Supabase write failed: {resp.status}"},
                         status_code=500,
                     )
 
-        # Invalidate cache so the new key is picked up immediately
+        # Invalidate cache so the new key is used immediately
         _api_key_cache["value"] = new_key
         _api_key_cache["timestamp"] = time.time()
-        logger.info("Auth key updated successfully via control panel")
+        logger.info("Auth key updated successfully in Supabase app_config")
 
         return {"status": "ok", "message": "Auth key updated"}
     except Exception as e:
@@ -554,11 +572,12 @@ def _sync_chat(llm, messages: list[dict], model_tag: str):
     content = (
         result["choices"][0]["message"]["content"] if result.get("choices") else ""
     )
+    logger.info(f"[{model_tag}] response:\n{content}")
     eval_count = result.get("usage", {}).get("completion_tokens", 0)
     total_duration = time.time_ns() - start
     latency_ms = total_duration / 1_000_000
 
-    # Log usage to Firebase
+    # Log usage to Supabase
     usage_entry = make_entry(
         message=f"Chat completion: {model_tag} — {eval_count} tokens in {latency_ms:.0f}ms",
         level="INFO",
@@ -573,7 +592,7 @@ def _sync_chat(llm, messages: list[dict], model_tag: str):
     )
     try:
         loop = asyncio.get_running_loop()
-        loop.create_task(firebase_log_writer.write(usage_entry))
+        loop.create_task(supabase_log_writer.write(usage_entry))
         loop.create_task(sse_manager.broadcast(usage_entry))
     except RuntimeError:
         pass
@@ -623,7 +642,7 @@ async def _stream_chat(llm, messages: list[dict], model_tag: str):
     total_duration = time.time_ns() - start
     latency_ms = total_duration / 1_000_000
 
-    # Log usage to Firebase
+    # Log usage to Supabase
     usage_entry = make_entry(
         message=f"Chat completion: {model_tag} — {eval_count} tokens in {latency_ms:.0f}ms",
         level="INFO",
@@ -638,7 +657,7 @@ async def _stream_chat(llm, messages: list[dict], model_tag: str):
     )
     try:
         loop = asyncio.get_running_loop()
-        loop.create_task(firebase_log_writer.write(usage_entry))
+        loop.create_task(supabase_log_writer.write(usage_entry))
         loop.create_task(sse_manager.broadcast(usage_entry))
     except RuntimeError:
         pass
