@@ -9,13 +9,19 @@ Usage:
 This script:
 1. Creates a Python virtual environment (server/.venv) if it doesn't exist
 2. Installs requirements.txt into the venv
-3. Launches the FastAPI server on port 8321
+3. Supervises the private FastAPI server on port 8321
+4. Supervises the automatic Cloudflare/Supabase endpoint publisher
+
+The eFlow gateway on port 8322 remains a separate service. The tunnel
+supervisor waits for it and never starts or owns that process.
 """
 
 import os
 import sys
 import subprocess
 import platform
+import signal
+import time
 from pathlib import Path
 
 # Fix Windows console encoding
@@ -116,18 +122,91 @@ def setup_venv():
     print("  [OK] Dependencies installed")
 
 
-def start_server():
-    """Launch the FastAPI server."""
-    print(f"\n[START] Starting LLM Backend on http://127.0.0.1:8321")
-    print(f"        Models directory: {SERVER_DIR.parent / 'models'}\n")
-
-    main_py = SERVER_DIR / "main.py"
-    sys.exit(
-        subprocess.call(
-            [str(PYTHON_BIN), str(main_py)],
-            cwd=str(SERVER_DIR),
+def _stop_child(process: subprocess.Popen | None) -> None:
+    if not process or process.poll() is not None:
+        return
+    if IS_WINDOWS:
+        subprocess.run(
+            ["taskkill", "/T", "/PID", str(process.pid)],
+            capture_output=True,
+            timeout=10,
         )
-    )
+    else:
+        os.killpg(process.pid, signal.SIGTERM)
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        if IS_WINDOWS:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                capture_output=True,
+                timeout=10,
+            )
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
+
+
+def supervise_services() -> int:
+    """Keep both the AI API and tunnel supervisor alive until shutdown."""
+    print("\n[START] Supervising private AI API on 127.0.0.1:8321")
+    print("[START] Supervising automatic Cloudflare endpoint publishing")
+    print("[INFO]  The separate eFlow gateway must be running on 127.0.0.1:8322")
+    print(f"[INFO]  Models directory: {SERVER_DIR.parent / 'models'}\n")
+
+    commands = {
+        "AI server": [str(PYTHON_BIN), str(SERVER_DIR / "main.py")],
+        "tunnel supervisor": [
+            str(PYTHON_BIN),
+            str(SERVER_DIR / "tunnel_supervisor.py"),
+        ],
+    }
+    processes: dict[str, subprocess.Popen | None] = {
+        name: None for name in commands
+    }
+    stopping = False
+
+    def request_shutdown(_signum=None, _frame=None):
+        nonlocal stopping
+        stopping = True
+
+    signal.signal(signal.SIGINT, request_shutdown)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, request_shutdown)
+
+    try:
+        while not stopping:
+            for name, command in commands.items():
+                process = processes[name]
+                if process is not None and process.poll() is None:
+                    continue
+                if process is not None:
+                    print(
+                        f"[RESTART] {name} exited with code {process.returncode}; "
+                        "restarting automatically in 5 seconds.",
+                        flush=True,
+                    )
+                    for _ in range(50):
+                        if stopping:
+                            break
+                        time.sleep(0.1)
+                if stopping:
+                    break
+                processes[name] = subprocess.Popen(
+                    command,
+                    cwd=str(SERVER_DIR),
+                    creationflags=(
+                        subprocess.CREATE_NEW_PROCESS_GROUP if IS_WINDOWS else 0
+                    ),
+                    start_new_session=not IS_WINDOWS,
+                )
+            time.sleep(1)
+    except KeyboardInterrupt:
+        stopping = True
+    finally:
+        print("[STOP] Shutting down supervised AI services.", flush=True)
+        for process in processes.values():
+            _stop_child(process)
+    return 0
 
 
 def main():
@@ -140,7 +219,7 @@ def main():
     if not skip_setup:
         setup_venv()
 
-    start_server()
+    raise SystemExit(supervise_services())
 
 
 if __name__ == "__main__":

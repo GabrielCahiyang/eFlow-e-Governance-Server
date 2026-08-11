@@ -15,8 +15,8 @@ tunnel: <TUNNEL-ID>
 credentials-file: C:\Users\gabri\.cloudflared\<TUNNEL-ID>.json
 
 ingress:
-  # Forward all traffic to the local FastAPI server
+  # Forward traffic to the JWT-protected eFlow gateway. Never tunnel port 8321.
   - hostname: <my-domain>
-    service: http://localhost:8321
+    service: http://localhost:8322
   # Catch-all (required by cloudflared)
   - service: http_status:404

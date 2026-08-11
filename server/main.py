@@ -1,12 +1,18 @@
 """
-Local LLM Backend Server — FastAPI + llama-cpp-python.
+Private Local LLM Backend Server — FastAPI + llama-cpp-python.
 
 Exposes an Ollama-compatible REST API so the React frontend needs
 minimal changes.  Models are GGUF files stored in ../models/ and
 auto-downloaded from HuggingFace on first use.
 
-All endpoints are served under the /controlpanelEflow/ prefix.
-Every request must include  Authorization: Bearer <API_KEY>.
+All endpoints are served under the /controlpanelEflow/ prefix. The service
+binds to loopback only and is reached remotely exclusively through the eFlow
+gateway on port 8322. Every request must include
+Authorization: Bearer <API_KEY>.
+
+`server/start.py` supervises this AI process and the separate automatic tunnel
+publisher. This module remains focused on the private model API and never owns
+the eFlow gateway process.
 
 The API key is read from the Supabase `app_config` table at startup
 (key = 'llm_auth_key').  Run the SQL in README to create that row.
@@ -17,6 +23,8 @@ GET  /api/health        — liveness check
 GET  /api/tags          — list available models (Ollama /api/tags format)
 GET  /api/ps            — currently loaded model  (Ollama /api/ps format)
 POST /api/chat          — streaming chat completion (NDJSON, Ollama format)
+POST /api/jobs          — enqueue an eFlow non-streaming chat job
+GET  /api/jobs/{id}     — poll an owner-scoped queued job
 POST /api/download      — trigger model download
 GET  /AUTHKEY           — fetch API key (no auth required)
 GET  /api/authkey       — alias for /AUTHKEY
@@ -33,12 +41,15 @@ import aiohttp
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional
+from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from job_queue import AiJobQueue
 
 from model_registry import (
     ModelEntry,
@@ -269,7 +280,10 @@ async def lifespan(app: FastAPI):
             "Could not load auth key from Supabase. "
             "Ensure the app_config table has a row with key='llm_auth_key'."
         )
+    await job_queue.start()
+    logger.info("FIFO AI job worker started.")
     yield
+    await job_queue.stop()
     manager.unload()
     logger.info("LLM Backend shut down.")
     await supabase_log_writer.close()
@@ -530,6 +544,31 @@ async def chat(request: Request, model_tag: Optional[str] = None):
             status_code=403,
         )
 
+    # Preserve the legacy non-streaming /chat contract while routing it through
+    # the same FIFO worker. Older eFlow builds will wait instead of colliding
+    # with an active model request; new builds use /jobs for visible position.
+    if not stream:
+        owner_id = request.headers.get("X-eFlow-User-Id", "").strip()
+        if not owner_id:
+            owner_id = f"legacy-local-{uuid4()}"
+        request_id = str(body.get("request_id", "")).strip() or None
+        snapshot = await job_queue.submit(
+            owner_id,
+            {**body, "model": model_tag, "stream": False},
+            request_id=request_id,
+        )
+        while snapshot["status"] in {"queued", "processing"}:
+            await asyncio.sleep(0.5)
+            snapshot = await job_queue.snapshot(snapshot["job_id"], owner_id)
+            if not snapshot:
+                return JSONResponse({"error": "Queued job was lost"}, status_code=500)
+        if snapshot["status"] == "failed":
+            return JSONResponse(
+                {"error": snapshot.get("error") or "Queued AI request failed"},
+                status_code=500,
+            )
+        return snapshot["result"]
+
     # Load the model if needed (swaps out any previously loaded model)
     try:
         manager.load(entry)
@@ -605,6 +644,117 @@ def _sync_chat(llm, messages: list[dict], model_tag: str):
         "total_duration": total_duration,
         "eval_count": eval_count,
     }
+
+
+def _execute_queued_chat(body: dict) -> dict:
+    """Run one queued non-streaming job in the queue's worker thread."""
+    model_tag = body.get("model", "")
+    entry = get_model(model_tag)
+    if not entry:
+        raise ValueError(f"Unknown model: {model_tag}")
+    if model_tag in disabled_models:
+        raise PermissionError(f"Model {model_tag} is currently disabled")
+
+    manager.load(entry)
+    llm = manager.llm
+    if llm is None:
+        raise RuntimeError("Model failed to load")
+
+    chat_messages = [
+        {
+            "role": message.get("role", "user"),
+            "content": message.get("content", ""),
+        }
+        for message in body.get("messages", [])
+    ]
+    response = _sync_chat(llm, chat_messages, model_tag)
+    if isinstance(response, JSONResponse):
+        payload = json.loads(response.body.decode("utf-8"))
+        raise RuntimeError(payload.get("error", "Queued AI request failed"))
+    return response
+
+
+async def _process_queued_chat(body: dict) -> dict:
+    result = await asyncio.to_thread(_execute_queued_chat, body)
+
+    # _sync_chat builds the normal local log entry in the worker thread. Write
+    # the same usage facts to the remote log sink from the active event loop.
+    total_duration = int(result.get("total_duration", 0))
+    eval_count = int(result.get("eval_count", 0))
+    latency_ms = total_duration / 1_000_000
+    usage_entry = make_entry(
+        message=(
+            f"Queued chat completion: {body.get('model', '')} — "
+            f"{eval_count} tokens in {latency_ms:.0f}ms"
+        ),
+        level="INFO",
+        source="chat",
+        log_type=LOG_TYPE_CHAT,
+        extra={
+            "model": body.get("model", ""),
+            "tokens": eval_count,
+            "latency_ms": round(latency_ms),
+            "stream": False,
+            "queued": True,
+        },
+    )
+    await asyncio.gather(
+        supabase_log_writer.write(usage_entry),
+        sse_manager.broadcast(usage_entry),
+        return_exceptions=True,
+    )
+    return result
+
+
+job_queue = AiJobQueue(_process_queued_chat)
+
+
+def _request_owner(request: Request) -> str:
+    owner_id = request.headers.get("X-eFlow-User-Id", "").strip()
+    if not owner_id:
+        raise ValueError("X-eFlow-User-Id is required for queued jobs")
+    return owner_id
+
+
+@router.post("/api/jobs")
+async def enqueue_chat_job(request: Request):
+    try:
+        owner_id = _request_owner(request)
+        body = await request.json()
+        if body.get("stream") is True:
+            return JSONResponse(
+                {"error": "Queued jobs support non-streaming requests only"},
+                status_code=400,
+            )
+        if not get_model(body.get("model", "")):
+            return JSONResponse(
+                {"error": f"Unknown model: {body.get('model', '')}"},
+                status_code=404,
+            )
+        messages = body.get("messages")
+        if not isinstance(messages, list) or not messages:
+            return JSONResponse({"error": "messages are required"}, status_code=400)
+        request_id = str(body.get("request_id", "")).strip() or None
+        snapshot = await job_queue.submit(
+            owner_id,
+            {**body, "stream": False},
+            request_id=request_id,
+        )
+        return JSONResponse(snapshot, status_code=202)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@router.get("/api/jobs/{job_id}")
+async def get_chat_job(job_id: str, request: Request):
+    try:
+        owner_id = _request_owner(request)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    snapshot = await job_queue.snapshot(job_id, owner_id)
+    if not snapshot:
+        return JSONResponse({"error": "AI job not found"}, status_code=404)
+    return snapshot
 
 
 async def _stream_chat(llm, messages: list[dict], model_tag: str):
@@ -731,9 +881,11 @@ if __name__ == "__main__":
 
     _kill_port(8321)
 
+    # Never expose the raw model API directly to a LAN or Cloudflare tunnel.
+    # Remote eFlow clients enter through the JWT-protected gateway on port 8322.
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8321,
         log_level="info",
     )

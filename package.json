@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "dev": "concurrently --kill-others \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:frontend": "vite",
+    "restart": "powershell -ExecutionPolicy Bypass -File scripts/restart-ai.ps1",
+    "dev:frontend": "vite --port 5175 --strictPort",
     "dev:backend": "python server/start.py",
     "dev:frontend-only": "vite"
   },

@@ -6,12 +6,23 @@ A premium, high-performance React dashboard for managing, monitoring, and contro
 
 This system serves as a centralized command center for your local AI backend. It runs models directly using a built-in Python backend powered by `llama-cpp-python` with CUDA GPU acceleration.
 
+> **eFlow deployment boundary:** port `8321` is a private loopback service. Remote eFlow traffic must enter through eFlow's JWT-protected gateway on port `8322`; never point Cloudflare directly at this model API. The local control dashboard may still use the internal API key, but that key must never be returned to the deployed eFlow browser.
+
+eFlow requests use the server-owned `/controlpanelEflow/api/jobs` FIFO queue. The node executes one non-streaming DeepSeek job at a time, exposes owner-scoped status polling through the gateway, and automatically begins the next waiting request when the active request finishes.
+
+`server/start.py` supervises the private AI process and the Cloudflare Quick Tunnel publisher. The eFlow gateway on `127.0.0.1:8322` remains a separate service owned by the eFlow repository; the publisher waits for it, tunnels only that gateway, writes every new Quick Tunnel URL directly to Supabase `system_config`, and restarts the tunnel automatically after a failure. No administrator copies or enters the URL.
+
+The tunnel and gateway remain available for eFlow Admin/control operations while the local model process restarts. Only AI-backed actions are gated by `ai_endpoint_status`; a DeepSeek outage does not disable normal eFlow task, project, user-management, or reporting workflows.
+
 ### Key Features
 
-- **🧠 Self-Contained Backend**: No external tools needed. The system downloads and runs GGUF models directly.
+- **🧠 Local Model Backend**: The server downloads and runs registered GGUF models directly through `llama-cpp-python`.
 - **🎛️ LLM Activation Panel**: Instantly enable, disable, or hot-swap models using intuitive UI toggles.
 - **📊 Real-time Dashboard**: Monitor system health, token throughput (tokens/sec), average latency, and per-model usage statistics.
-- **🔑 API Key Management**: Built-in authentication manager synced with Firebase Realtime Database to secure your local API endpoints.
+- **🔑 Private Internal Authentication**: The model key is loaded server-side from Supabase `app_config`, used only by the local dashboard and eFlow gateway, and never returned to the deployed browser.
+- **🚦 Shared FIFO Queue**: One DeepSeek job runs at a time while additional users receive queue positions instead of model-busy errors.
+- **☁️ Automatic Quick Tunnel Publishing**: Rotating Cloudflare URLs, runtime status, messages, and heartbeats are written directly to Supabase.
+- **♻️ Clean AI Restart**: `npm run restart` removes stale AI API, dashboard, queue, supervisor, and matching tunnel processes before starting one clean stack.
 - **📝 Live Server Logs**: Real-time terminal-style server logging via SSE (Server-Sent Events) for instant debugging and monitoring.
 - **🌓 Premium Dark Mode**: High-contrast, glassmorphic design.
 
@@ -22,7 +33,7 @@ This system serves as a centralized command center for your local AI backend. It
 The local backend acts as an API server on port `8321`. It is fully compatible with standard chat completion formats (like Ollama). All API endpoints are grouped under the `/controlpanelEflow` prefix to ensure secure routing.
 
 ### 1. Authentication
-Every request to the backend requires an API key in the `Authorization` header. You can generate and view this key in the Control Dashboard under **API Key Management**.
+Every direct loopback request to the private backend requires the internal API key in the `Authorization` header. The server loads this key from the Supabase `app_config` row whose key is `llm_auth_key`; the local dashboard can manage it through the backend. Remote eFlow browsers never receive this key and use a verified Supabase user JWT at the gateway instead.
 
 ```http
 Authorization: Bearer <YOUR_API_KEY>
@@ -65,50 +76,9 @@ curl -X POST http://127.0.0.1:8321/controlpanelEflow/api/chat \
   }'
 ```
 
-**Example: TypeScript Integration (Eflow System)**
-Here is a real-world example of how the Eflow System queries the backend to evaluate and recommend employees for tasks using structured JSON output.
+**eFlow integration boundary**
 
-```typescript
-const API_BASE = (import.meta.env.VITE_LLM_BASE_URL || "/api").replace(/\/$/, "");
-const CHAT_ENDPOINT = `${API_BASE}/chat`;
-const LLM_MODEL = "deepseek-r1:8b"; // Or any active model
-
-export const recommendAssignee = async (task: Task, employees: Employee[]) => {
-  const prompt = `You are an AI assistant helping assign tasks...
-  Output your response as a strict JSON object...`;
-
-  try {
-    const runtimeToken = await fetchAuthKey(); // Fetch from /api/authkey
-    const response = await fetch(CHAT_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(runtimeToken ? { Authorization: `Bearer ${runtimeToken}` } : {}),
-      },
-      body: JSON.stringify({
-        model: LLM_MODEL,
-        messages: [{ role: "user", content: prompt }],
-        stream: false, // For structured JSON data, wait for the full response
-      }),
-    });
-
-    if (!response.ok) return null;
-
-    const data = await response.json();
-    const contentString = data.message?.content || "";
-
-    // Extract JSON (DeepSeek sometimes wraps in markdown code blocks)
-    const jsonMatch = contentString.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-    return null;
-  } catch (error) {
-    console.error("Failed to fetch LLM recommendation:", error);
-    return null;
-  }
-};
-```
+The deployed eFlow browser must not call port `8321`, `/AUTHKEY`, or `/api/authkey`. It discovers eFlow's rotating gateway endpoint from Supabase, sends the signed-in user's Supabase access token to `POST /controlpanelEflow/api/ai/jobs`, and polls the owner-scoped job resource. The gateway validates that session and adds the internal model key only while proxying over loopback to this server.
 
 ### 4. Fetch Available Models (`/api/tags`)
 Get a list of all models registered and available for download/use.
@@ -127,6 +97,7 @@ See which model is currently loaded into VRAM. Note: The system unloads and hot-
 
 - **Python 3.10+** — [Download Python](https://www.python.org/downloads/)
 - **Node.js 18+** — [Download Node.js](https://nodejs.org/)
+- **cloudflared** — required for automatic remote eFlow Quick Tunnels
 - **8 GB+ RAM** — 16 GB recommended for larger models
 - **NVIDIA GPU** — See GPU & CUDA section below before installing
 
@@ -201,7 +172,7 @@ models/
 
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS (v4), Lucide Icons
 - **Backend**: Python, FastAPI, llama-cpp-python (CUDA enabled)
-- **Database**: Firebase Realtime Database (for config and audit logs)
+- **Runtime data**: Supabase for the internal key, AI usage logs, Quick Tunnel discovery/status, and heartbeats; Firebase remains only where the legacy local dashboard still uses it.
 - **Models**: GGUF format, auto-downloaded from HuggingFace
 
 ---
@@ -317,31 +288,91 @@ VITE_FIREBASE_STORAGE_BUCKET=your_project.firebasestorage.app
 VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 VITE_FIREBASE_APP_ID=your_app_id
 VITE_FIREBASE_MEASUREMENT_ID=your_measurement_id
+
+# Private backend configuration. Never use VITE_SUPABASE_SERVICE_ROLE_KEY.
+SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+# VITE_SUPABASE_URL remains accepted as a URL-only compatibility fallback.
+VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_YOUR_SERVER_ONLY_KEY
+
+# Automatic eFlow Quick Tunnel
+EFLOW_GATEWAY_ORIGIN=http://127.0.0.1:8322
+EFLOW_TUNNEL_RETRY_SECONDS=5
+EFLOW_TUNNEL_HEALTH_INTERVAL_SECONDS=5
+EFLOW_TUNNEL_FAILURE_THRESHOLD=3
+# CLOUDFLARED_PATH=C:\Program Files (x86)\cloudflared\cloudflared.exe
 ```
 
-### 2. Install Dependencies
+Never place the service-role value in `VITE_SUPABASE_SERVICE_ROLE_KEY`; all `VITE_` variables must be treated as browser-visible. Rotate any service-role credential that has previously appeared in source code or browser configuration.
 
-```bash
+### 2. Install Cloudflare and Node dependencies
+
+Install `cloudflared` once on the AI host:
+
+```powershell
+winget install Cloudflare.cloudflared
+cloudflared --version
+```
+
+Then install the dashboard dependencies:
+
+```powershell
 npm install
 ```
 
-### 3. Run the Application
+Python setup is automatic: `server/start.py` creates `server/.venv` and installs `server/requirements.txt` on first run.
 
-```bash
+### 3. Start eFlow and the AI host
+
+The repositories are intentionally independent and must be started from separate terminals:
+
+```powershell
+# Terminal 1 — eFlow web and JWT-protected gateway on port 8322
+Set-Location "C:\Users\gabri\OneDrive\Desktop\EflowWeb"
+npm install
+npm run dev
+
+# Terminal 2 — private AI API, queue worker, dashboard, and tunnel publisher
+Set-Location "C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration"
+npm install
 npm run dev
 ```
 
-On first run the system will:
-- Create a Python virtual environment (`server/.venv/`)
-- Install Python dependencies (`fastapi`, `llama-cpp-python`, etc.)
-- Start the FastAPI backend on port `8321`
-- Start the Vite frontend on port `5173`
+The eFlow command starts only eFlow. The AI command starts only this repository's AI backend, dashboard, queue, and tunnel publisher; it never starts the eFlow frontend.
+
+On AI startup the system will:
+
+- create or reuse `server/.venv` and install the Python requirements when needed;
+- start the private model API on `127.0.0.1:8321`;
+- start the FIFO worker that executes one non-streaming job at a time;
+- start the AI dashboard on `http://localhost:5175`;
+- wait for the separately owned eFlow gateway on `127.0.0.1:8322`;
+- create a Quick Tunnel to that gateway;
+- publish `ai_endpoint`, `ai_endpoint_status`, `ai_endpoint_status_message`, and `ai_endpoint_heartbeat` to Supabase.
+
+The generated endpoint has this shape:
+
+```text
+https://<random-host>.trycloudflare.com/controlpanelEflow/api
+```
+
+The hostname changes after a tunnel replacement. eFlow clients read the current value from Supabase, so no Vercel rebuild or manual URL entry is required.
+
+### 4. Cleanly restart the AI side
+
+Use this after changing the AI backend or when old AI/tunnel processes are stuck:
+
+```powershell
+npm run restart
+```
+
+The restart script terminates only processes belonging to this AI repository and Quick Tunnels targeting `127.0.0.1:8322`, then launches the normal AI development stack. It does not terminate eFlow's Vite frontend or gateway.
 
 > Models are automatically downloaded from HuggingFace when first activated.
 
 ### Alternative: Run components separately
 
-```bash
+```powershell
 # Terminal 1 — Backend only
 npm run dev:backend
 
@@ -359,32 +390,42 @@ npm run dev:frontend-only
 - `src/app/components/ServerLogsPanel.tsx` — Live SSE server log viewer
 - `src/app/services/llm.ts` — API service for model status and control
 - `src/app/services/serverLogs.ts` — Hook for streaming and parsing backend logs
-- `src/app/services/authKeyService.ts` — Firebase API Key manager
+- `src/app/services/authKeyService.ts` — Local dashboard client for backend-managed internal keys
 - `server/main.py` — FastAPI backend server
 - `server/model_registry.py` — Model definitions and HuggingFace download manager
 - `server/server_logging.py` — Log ring-buffer and SSE broadcasting
 - `server/start.py` — Auto-setup and launch script
+- `server/job_queue.py` — Owner-scoped in-memory FIFO queue and retained results
+- `server/tunnel_supervisor.py` — Tunnel lifecycle, gateway/AI health, and automatic retry
+- `server/tunnel_process.py` — `cloudflared` process and generated-URL detection
+- `server/tunnel_state.py` — Supabase endpoint, status, message, and heartbeat publication
+- `server/tunnel_config.py` — Private environment-backed tunnel configuration
+- `scripts/restart-ai.ps1` — Windows cleanup and one-command AI restart
 
 ---
 
 ## 💡 Architecture
 
 ```
-React Frontend (Vite :5173)
+AI Dashboard Frontend (Vite :5175)
         ↓
 Vite Proxy (/controlpanelEflow)
         ↓
-Python FastAPI Backend (:8321)
+Private Python FastAPI Backend (127.0.0.1:8321)
         ↓
 llama-cpp-python (CUDA)
         ↓
 ./models/*.gguf (VRAM)
 ```
 
+Remote eFlow traffic follows a separate path: eFlow browser → Cloudflare Quick Tunnel → JWT-protected eFlow gateway on `127.0.0.1:8322` → owner-scoped FIFO queue on this private server → DeepSeek.
+
 ### Authentication & Security
-- **API Key Control**: The dashboard generates and saves a secure API key to Firebase RTDB (`/AUTHKEY`). Every request to the backend requires `Authorization: Bearer <key>` in the header.
+- **Internal API key**: The backend loads `llm_auth_key` from Supabase `app_config`. Only the local dashboard and eFlow gateway use it; deployed eFlow clients use their normal Supabase JWT instead.
+- **eFlow boundary**: The deployed eFlow browser uses its Supabase session against the gateway and never receives this internal API key.
 - **Route Prefix**: All API endpoints are served under `/controlpanelEflow/` (e.g. `/controlpanelEflow/api/chat`).
-- **Audit Logs**: Backend requests are streamed to the frontend via SSE and persisted to Firebase RTDB under `/ServerLogs/`.
+- **Queue ownership**: The gateway derives the owner from the verified Supabase session, and the AI server prevents users from polling jobs they do not own.
+- **Audit and runtime data**: Backend usage logs and automatic endpoint state are written to Supabase; live dashboard logs continue through SSE.
 
 ---
 
@@ -403,6 +444,35 @@ llama-cpp-python (CUDA)
 ---
 
 ## 🔧 Troubleshooting
+
+### `Waiting for eFlow gateway :8322`
+
+This is not an AI crash. The tunnel intentionally exposes the authenticated eFlow gateway rather than raw port `8321`. Start eFlow in its own terminal:
+
+```powershell
+Set-Location "C:\Users\gabri\OneDrive\Desktop\EflowWeb"
+npm run dev
+```
+
+Confirm `http://127.0.0.1:8322/controlpanelEflow/api/health` returns `eflow-control-gateway`. The AI supervisor will detect it automatically and continue with Cloudflare; do not paste a tunnel URL into eFlow manually.
+
+### Duplicate AI processes, repeated retries, or port `5175`/`8321` already in use
+
+Run the scoped cleanup command from this repository:
+
+```powershell
+npm run restart
+```
+
+The script cleans stale AI processes and duplicate Quick Tunnels before starting one stack. Do not use it as a replacement for eFlow's own `npm run dev`.
+
+### AI is restarting but eFlow Admin pages still work
+
+This is expected. The gateway and tunnel remain online while `server/start.py` restarts the private model process. Normal eFlow features continue; only proposal decomposition and other AI-backed actions are temporarily unavailable.
+
+### Quick Tunnel hostname changed
+
+Quick Tunnel hostnames are disposable. The supervisor publishes the replacement to Supabase automatically, and eFlow clients refetch it and retry once. No `.env` change, Vercel rebuild, or Admin URL entry is required.
 
 A collection of every real issue encountered during development and their exact fixes.
 
