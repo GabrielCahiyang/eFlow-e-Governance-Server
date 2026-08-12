@@ -4,3 +4,4 @@ llama-cpp-python>=0.3.0
 huggingface-hub>=0.26.0
 python-dotenv>=1.0.0
 aiohttp>=3.8.0
+psutil>=6.0.0

@@ -77,11 +77,22 @@ def setup_venv():
         )
         print("  [OK] Virtual environment created")
 
-    # Check if deps already installed (skip slow pip checks)
+    # Trust the marker only after verifying dependencies added in later updates.
     marker = VENV_DIR / ".deps_installed"
     if marker.exists():
-        print("  [OK] Dependencies already installed (delete server/.venv/.deps_installed to force reinstall)")
-        return
+        dependency_check = subprocess.run(
+            [
+                str(PYTHON_BIN),
+                "-c",
+                "import aiohttp, dotenv, fastapi, psutil, uvicorn",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if dependency_check.returncode == 0:
+            print("  [OK] Dependencies already installed")
+            return
+        print("  -> Runtime dependencies changed; updating the virtual environment ...")
 
     # Install / upgrade dependencies
     print("  -> Installing dependencies ...")

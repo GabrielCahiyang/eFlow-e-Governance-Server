@@ -1,4 +1,4 @@
-# LLM Control Panel & Dashboard
+# eFlow Server Side
 
 A premium, high-performance React dashboard for managing, monitoring, and controlling local Large Language Models (LLMs).
 
@@ -18,13 +18,14 @@ The tunnel and gateway remain available for eFlow Admin/control operations while
 
 - **🧠 Local Model Backend**: The server downloads and runs registered GGUF models directly through `llama-cpp-python`.
 - **🎛️ LLM Activation Panel**: Instantly enable, disable, or hot-swap models using intuitive UI toggles.
-- **📊 Real-time Dashboard**: Monitor system health, token throughput (tokens/sec), average latency, and per-model usage statistics.
+- **📊 Live Operations Dashboard**: Monitor actual GPU utilization, VRAM allocation, GPU temperature, power draw, CPU/RAM use, process memory, uptime, and model workload.
 - **🔑 Private Internal Authentication**: The model key is loaded server-side from Supabase `app_config`, used only by the local dashboard and eFlow gateway, and never returned to the deployed browser.
 - **🚦 Shared FIFO Queue**: One DeepSeek job runs at a time while additional users receive queue positions instead of model-busy errors.
 - **☁️ Automatic Quick Tunnel Publishing**: Rotating Cloudflare URLs, runtime status, messages, and heartbeats are written directly to Supabase.
+- **🌐 Dashboard Tunnel Control**: View, copy, and intentionally rotate the active Quick Tunnel; the supervisor publishes the replacement to Supabase automatically.
 - **♻️ Clean AI Restart**: `npm run restart` removes stale AI API, dashboard, queue, supervisor, and matching tunnel processes before starting one clean stack.
 - **📝 Live Server Logs**: Real-time terminal-style server logging via SSE (Server-Sent Events) for instant debugging and monitoring.
-- **🌓 Premium Dark Mode**: High-contrast, glassmorphic design.
+- **🎨 eFlow Operations UI**: A light, governance-focused console aligned with the main eFlow visual language, plus a focused dark live-log surface.
 
 ---
 
@@ -90,6 +91,15 @@ Get a list of all models registered and available for download/use.
 See which model is currently loaded into VRAM. Note: The system unloads and hot-swaps models automatically depending on the incoming requests.
 
 **GET** `http://127.0.0.1:8321/controlpanelEflow/api/ps`
+
+### 6. Read Operations Telemetry (`/api/operations`)
+
+Returns live GPU, VRAM, temperature, power, system memory/CPU, private-process, model, and FIFO queue telemetry for the local dashboard.
+
+### 7. Read or Rotate the Published Tunnel
+
+- **GET** `/controlpanelEflow/api/tunnel/status` reads the endpoint and heartbeat currently stored in Supabase `system_config`.
+- **POST** `/controlpanelEflow/api/tunnel/rotate` asks the separate tunnel supervisor for a fresh Quick Tunnel. The replacement URL is published automatically; callers never paste or overwrite `ai_endpoint` themselves.
 
 ---
 
@@ -385,9 +395,12 @@ npm run dev:frontend-only
 ## 📂 Project Structure
 
 - `src/app/App.tsx` — Main application layout
-- `src/app/components/ControlDashboard.tsx` — Statistics and monitoring interface
+- `src/app/components/ControlDashboard.tsx` — Small operations-dashboard composition shell
 - `src/app/components/ModelSidebar.tsx` — Control panel for toggling LLMs on/off
 - `src/app/components/ServerLogsPanel.tsx` — Live SSE server log viewer
+- `src/app/components/server-dashboard/` — Focused GPU, queue, tunnel, credential, metric, and performance panels
+- `src/app/hooks/useOperationsDashboard.ts` — Live operations and tunnel polling lifecycle
+- `src/app/services/operationsService.ts` — Typed dashboard telemetry and rotation client
 - `src/app/services/llm.ts` — API service for model status and control
 - `src/app/services/serverLogs.ts` — Hook for streaming and parsing backend logs
 - `src/app/services/authKeyService.ts` — Local dashboard client for backend-managed internal keys
@@ -396,6 +409,8 @@ npm run dev:frontend-only
 - `server/server_logging.py` — Log ring-buffer and SSE broadcasting
 - `server/start.py` — Auto-setup and launch script
 - `server/job_queue.py` — Owner-scoped in-memory FIFO queue and retained results
+- `server/system_metrics.py` — Real NVIDIA, CPU, memory, process, and uptime telemetry
+- `server/tunnel_control.py` — Supabase tunnel-state reads and supervisor rotation signaling
 - `server/tunnel_supervisor.py` — Tunnel lifecycle, gateway/AI health, and automatic retry
 - `server/tunnel_process.py` — `cloudflared` process and generated-URL detection
 - `server/tunnel_state.py` — Supabase endpoint, status, message, and heartbeat publication

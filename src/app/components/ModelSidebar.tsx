@@ -1,37 +1,24 @@
-import { Power, Cpu, Database, Zap, Server } from "lucide-react";
-import { Switch } from "./ui/switch";
+import { Boxes, BrainCircuit, CheckCircle2, CircleOff, Cpu, Sparkles } from 'lucide-react';
+import { Switch } from './ui/switch';
 
 export type Model = {
   id: string;
   name: string;
   modelTag?: string;
-  category: "chat" | "reasoning" | "coding" | "fast" | "embedding";
-  status: "loaded" | "unloaded";
+  category: 'chat' | 'reasoning' | 'coding' | 'fast' | 'embedding';
+  status: 'loaded' | 'unloaded';
   vram: number;
-  speed: "fast" | "medium" | "slow";
+  speed: 'fast' | 'medium' | 'slow';
   description: string;
   supportsVision: boolean;
 };
 
-const categoryMeta: Record<
-  Model["category"],
-  { label: string; color: string; bg: string }
-> = {
-  chat: { label: "Chat", color: "#60a5fa", bg: "rgba(96,165,250,0.12)" },
-  reasoning: {
-    label: "Reasoning",
-    color: "#a78bfa",
-    bg: "rgba(167,139,250,0.12)",
-  },
-  coding: { label: "Coding", color: "#fb923c", bg: "rgba(251,146,60,0.12)" },
-  fast: { label: "Fast", color: "#4ade80", bg: "rgba(74,222,128,0.12)" },
-  embedding: { label: "Embed", color: "#22d3ee", bg: "rgba(34,211,238,0.12)" },
-};
-
-const speedMeta: Record<Model["speed"], { color: string; icon: string }> = {
-  fast: { color: "#4ade80", icon: "⚡" },
-  medium: { color: "#facc15", icon: "⚡" },
-  slow: { color: "#fb923c", icon: "⚡" },
+const categoryLabels: Record<Model['category'], string> = {
+  chat: 'Chat',
+  reasoning: 'Reasoning',
+  coding: 'Coding',
+  fast: 'Fast',
+  embedding: 'Embedding',
 };
 
 type Props = {
@@ -41,387 +28,72 @@ type Props = {
   backendOnline?: boolean;
 };
 
-export function ModelSidebar({
-  models,
-  enabledModels,
-  onToggleModel,
-  backendOnline = false,
-}: Props) {
-  const activeCount = enabledModels.size;
-  const totalVram = models
-    .filter((m) => enabledModels.has(m.id))
-    .reduce((sum, m) => sum + m.vram, 0);
-
+function ModelRow({ model, enabled, onToggle }: { model: Model; enabled: boolean; onToggle: () => void }) {
   return (
-    <div
-      style={{
-        width: "18rem",
-        minWidth: "18rem",
-        background: "linear-gradient(180deg, #0f1117 0%, #12141c 100%)",
-        borderRight: "1px solid rgba(255,255,255,0.07)",
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        overflow: "hidden",
-      }}
-    >
-      {/* ── Header ── */}
-      <div
-        style={{
-          padding: "1.1rem 1rem 0.9rem",
-          borderBottom: "1px solid rgba(255,255,255,0.07)",
-          flexShrink: 0,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            marginBottom: "0.5rem",
-          }}
-        >
-          <div
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 8,
-              background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Power size={15} color="#fff" />
+    <article className={`rounded-xl border p-3 transition ${enabled ? 'border-neutral-200 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)]' : 'border-transparent bg-neutral-100/70 opacity-65'}`}>
+      <div className="flex items-start gap-3">
+        <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${enabled ? 'bg-neutral-950 text-white' : 'bg-neutral-200 text-neutral-500'}`}>
+          <BrainCircuit className="h-3.5 w-3.5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="m-0 truncate text-xs font-semibold text-neutral-900">{model.name}</p>
+          <p className="mb-0 mt-0.5 truncate text-[10px] text-neutral-500">{model.description}</p>
+        </div>
+        <Switch checked={enabled} onCheckedChange={onToggle} aria-label={`Toggle ${model.name}`} />
+      </div>
+      <div className="mt-3 flex items-center gap-2 pl-11 text-[9px] font-semibold uppercase tracking-[0.06em]">
+        <span className="rounded-full bg-violet-50 px-2 py-1 text-violet-700">{categoryLabels[model.category]}</span>
+        <span className={`flex items-center gap-1 ${model.status === 'loaded' ? 'text-emerald-700' : 'text-neutral-400'}`}>
+          {model.status === 'loaded' ? <CheckCircle2 className="h-3 w-3" /> : <CircleOff className="h-3 w-3" />}
+          {model.status === 'loaded' ? 'Ready' : 'Not downloaded'}
+        </span>
+      </div>
+    </article>
+  );
+}
+
+export function ModelSidebar({ models, enabledModels, onToggleModel, backendOnline = false }: Props) {
+  const downloaded = models.filter((model) => model.status === 'loaded').length;
+  return (
+    <aside className="hidden h-screen w-[278px] shrink-0 flex-col border-r border-neutral-200 bg-[#f1f1ef] lg:flex">
+      <div className="border-b border-neutral-200 px-5 py-5">
+        <div className="flex items-center gap-3">
+          <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-neutral-950 text-white shadow-sm">
+            <span className="text-lg font-bold tracking-[-0.08em]">e</span>
+            <span className="absolute bottom-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400" />
           </div>
           <div>
-            <span
-              style={{
-                color: "#fff",
-                fontWeight: 700,
-                fontSize: "0.88rem",
-                letterSpacing: "0.01em",
-                display: "block",
-              }}
-            >
-              LLM Activation
-            </span>
-            <span
-              style={{
-                color: "rgba(255,255,255,0.4)",
-                fontSize: "0.65rem",
-                display: "block",
-              }}
-            >
-              Toggle models on/off
-            </span>
-          </div>
-        </div>
-
-        {/* Active count bar */}
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <div
-            style={{
-              flex: 1,
-              height: 4,
-              borderRadius: 99,
-              background: "rgba(255,255,255,0.08)",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                height: "100%",
-                width: `${(activeCount / Math.max(models.length, 1)) * 100}%`,
-                borderRadius: 99,
-                background:
-                  activeCount > 0
-                    ? "linear-gradient(90deg,#4ade80,#22d3ee)"
-                    : "transparent",
-                transition: "width 0.4s ease",
-              }}
-            />
-          </div>
-          <span
-            style={{
-              color: "rgba(255,255,255,0.45)",
-              fontSize: "0.72rem",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {activeCount} / {models.length} active
-          </span>
-        </div>
-
-        {/* Backend status */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.35rem",
-            marginTop: "0.45rem",
-          }}
-        >
-          <span
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              background: backendOnline ? "#4ade80" : "#ef4444",
-              boxShadow: backendOnline ? "0 0 6px #4ade80" : "0 0 6px #ef4444",
-              display: "inline-block",
-            }}
-          />
-          <span
-            style={{
-              fontSize: "0.68rem",
-              color: backendOnline ? "#4ade80" : "#ef4444",
-              fontWeight: 500,
-            }}
-          >
-            {backendOnline ? "Backend connected" : "Backend offline"}
-          </span>
-        </div>
-      </div>
-
-      {/* ── Model list ── */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: "auto",
-          padding: "0.75rem 0.75rem",
-          display: "flex",
-          flexDirection: "column",
-          gap: "0.5rem",
-          scrollbarWidth: "thin",
-          scrollbarColor: "rgba(255,255,255,0.12) transparent",
-        }}
-      >
-        {models.map((model) => {
-          const isEnabled = enabledModels.has(model.id);
-          const cat = categoryMeta[model.category];
-          const spd = speedMeta[model.speed];
-
-          return (
-            <div
-              key={model.id}
-              style={{
-                padding: "0.7rem 0.75rem",
-                borderRadius: 10,
-                border: `1px solid ${
-                  isEnabled
-                    ? "rgba(74,222,128,0.35)"
-                    : "rgba(255,255,255,0.07)"
-                }`,
-                background: isEnabled
-                  ? "linear-gradient(135deg,rgba(74,222,128,0.08),rgba(34,211,238,0.05))"
-                  : "rgba(255,255,255,0.02)",
-                transition: "all 0.25s ease",
-                opacity: isEnabled ? 1 : 0.6,
-              }}
-            >
-              {/* Top row: name + switch */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.5rem",
-                }}
-              >
-                {/* Status indicator */}
-                <div
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: isEnabled ? "#4ade80" : "rgba(255,255,255,0.15)",
-                    boxShadow: isEnabled ? "0 0 8px #4ade80" : "none",
-                    transition: "all 0.3s ease",
-                    flexShrink: 0,
-                  }}
-                />
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      color: "#fff",
-                      fontWeight: 600,
-                      fontSize: "0.82rem",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {model.name}
-                  </div>
-                  <div
-                    style={{
-                      color: "rgba(255,255,255,0.4)",
-                      fontSize: "0.68rem",
-                      marginTop: 1,
-                    }}
-                  >
-                    {model.description}
-                  </div>
-                </div>
-
-                {/* ON/OFF Switch */}
-                <Switch
-                  checked={isEnabled}
-                  onCheckedChange={() => onToggleModel(model.id)}
-                />
-              </div>
-
-              {/* Bottom row: badges */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.4rem",
-                  marginTop: "0.45rem",
-                  marginLeft: "1.2rem",
-                  flexWrap: "wrap",
-                }}
-              >
-                {/* category pill */}
-                <span
-                  style={{
-                    fontSize: "0.6rem",
-                    fontWeight: 600,
-                    padding: "0.12rem 0.4rem",
-                    borderRadius: 99,
-                    background: cat.bg,
-                    color: cat.color,
-                    border: `1px solid ${cat.color}30`,
-                    letterSpacing: "0.03em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {cat.label}
-                </span>
-
-                {/* download status */}
-                <span
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 3,
-                    fontSize: "0.6rem",
-                    color:
-                      model.status === "loaded"
-                        ? "#4ade80"
-                        : "rgba(255,255,255,0.3)",
-                    fontWeight: 500,
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 4,
-                      height: 4,
-                      borderRadius: "50%",
-                      background:
-                        model.status === "loaded"
-                          ? "#4ade80"
-                          : "rgba(255,255,255,0.2)",
-                      display: "inline-block",
-                    }}
-                  />
-                  {model.status === "loaded" ? "Downloaded" : "Not downloaded"}
-                </span>
-
-                {/* vram */}
-                <span
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 2,
-                    fontSize: "0.6rem",
-                    color: "rgba(255,255,255,0.35)",
-                  }}
-                >
-                  <Database size={8} />
-                  {model.vram}GB
-                </span>
-
-                {/* speed */}
-                <span
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 2,
-                    fontSize: "0.6rem",
-                    color: spd.color,
-                    fontWeight: 500,
-                  }}
-                >
-                  <Zap size={8} />
-                  {model.speed}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ── Footer summary ── */}
-      <div
-        style={{
-          padding: "0.75rem 1rem",
-          borderTop: "1px solid rgba(255,255,255,0.07)",
-          flexShrink: 0,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontSize: "0.65rem",
-                color: "rgba(255,255,255,0.35)",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}
-            >
-              Total VRAM (active)
-            </div>
-            <div
-              style={{
-                fontSize: "1rem",
-                fontWeight: 700,
-                color: totalVram > 0 ? "#22d3ee" : "rgba(255,255,255,0.3)",
-              }}
-            >
-              {totalVram.toFixed(1)} GB
-            </div>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <div
-              style={{
-                fontSize: "0.65rem",
-                color: "rgba(255,255,255,0.35)",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}
-            >
-              Active Models
-            </div>
-            <div
-              style={{
-                fontSize: "1rem",
-                fontWeight: 700,
-                color: activeCount > 0 ? "#4ade80" : "rgba(255,255,255,0.3)",
-              }}
-            >
-              {activeCount}
-            </div>
+            <p className="m-0 text-sm font-semibold tracking-[-0.02em] text-neutral-950">eFlow Server Side</p>
+            <p className="m-0 mt-0.5 text-[10px] font-medium uppercase tracking-[0.1em] text-neutral-500">AI operations console</p>
           </div>
         </div>
       </div>
-    </div>
+
+      <div className="px-4 pb-2 pt-4">
+        <div className="rounded-xl border border-neutral-200 bg-white p-3 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+          <div className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2 text-xs font-semibold text-neutral-800"><Cpu className="h-3.5 w-3.5" />Private AI node</span>
+            <span className={`h-2 w-2 rounded-full ${backendOnline ? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.12)]' : 'bg-red-500'}`} />
+          </div>
+          <p className="mb-0 mt-2 text-[10px] leading-4 text-neutral-500">{backendOnline ? 'Online and accepting authenticated eFlow requests.' : 'Offline. The supervisor will restart the service automatically.'}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between px-5 pb-2 pt-3">
+        <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500"><Boxes className="h-3.5 w-3.5" />Model access</span>
+        <span className="text-[10px] font-semibold text-neutral-500">{enabledModels.size}/{models.length}</span>
+      </div>
+
+      <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-3 pb-3">
+        {models.map((model) => <ModelRow key={model.id} model={model} enabled={enabledModels.has(model.id)} onToggle={() => onToggleModel(model.id)} />)}
+      </div>
+
+      <div className="border-t border-neutral-200 p-4">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-xl bg-neutral-200/60 p-3"><p className="m-0 text-[9px] font-semibold uppercase tracking-[0.08em] text-neutral-500">Downloaded</p><p className="mb-0 mt-1 flex items-center gap-1.5 text-sm font-semibold text-neutral-900"><Sparkles className="h-3.5 w-3.5" />{downloaded}</p></div>
+          <div className="rounded-xl bg-neutral-200/60 p-3"><p className="m-0 text-[9px] font-semibold uppercase tracking-[0.08em] text-neutral-500">Enabled</p><p className="mb-0 mt-1 text-sm font-semibold text-neutral-900">{enabledModels.size}</p></div>
+        </div>
+      </div>
+    </aside>
   );
 }

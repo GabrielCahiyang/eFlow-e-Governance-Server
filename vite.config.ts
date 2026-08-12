@@ -44,7 +44,7 @@ export default defineConfig(({ mode }) => {
     server: {
       proxy: {
         '/api': {
-          target: 'http://localhost:8321',
+          target: 'http://127.0.0.1:8321',
           changeOrigin: true,
           rewrite: (p) => `/controlpanelEflow${p}`,
           configure: (proxy) => {

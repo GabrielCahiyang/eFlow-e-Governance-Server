@@ -6,3 +6,5 @@ server/__pycache__/
 .env
 dist/
 *.json.bak
+server/.tunnel-rotate.request
+server/.tunnel-rotate.tmp

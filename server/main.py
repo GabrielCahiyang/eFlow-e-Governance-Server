@@ -50,6 +50,8 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from job_queue import AiJobQueue
+from system_metrics import read_system_metrics
+from tunnel_control import request_tunnel_rotation, read_tunnel_state
 
 from model_registry import (
     ModelEntry,
@@ -101,11 +103,11 @@ _handler = BufferAndBroadcastHandler(
 _handler.setFormatter(logging.Formatter("%(asctime)s  %(levelname)-8s  %(message)s"))
 logging.getLogger().addHandler(_handler)
 
-# Also attach to uvicorn loggers explicitly
-for _uvi_name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
-    logging.getLogger(_uvi_name).addHandler(_handler)
+# Uvicorn loggers propagate to the root logger. Attaching the same handler to
+# both levels duplicates every access and lifecycle entry in the dashboard.
 
 logger.info(f"Supabase URL: {SUPABASE_URL}")
+SERVER_STARTED_AT = time.time()
 
 
 # ── API Key Cache (to avoid hammering Supabase on every request) ──────
@@ -289,7 +291,7 @@ async def lifespan(app: FastAPI):
     await supabase_log_writer.close()
 
 
-app = FastAPI(title="Local LLM Backend", lifespan=lifespan)
+app = FastAPI(title="eFlow Server Side", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -311,6 +313,50 @@ router = APIRouter()
 @router.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+@router.get("/api/operations")
+async def operations_snapshot():
+    """Live operational facts used by the local server dashboard."""
+    hardware, queue = await asyncio.gather(
+        asyncio.to_thread(read_system_metrics, SERVER_STARTED_AT),
+        job_queue.overview(),
+    )
+    return {
+        **hardware,
+        "queue": queue,
+        "model": {
+            "loaded": manager.loaded_tag,
+            "registered": len(list_all_models()),
+            "enabled": len(list_all_models()) - len(disabled_models),
+        },
+    }
+
+
+@router.get("/api/tunnel/status")
+async def tunnel_status():
+    try:
+        return await read_tunnel_state(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    except Exception as exc:
+        logger.warning("Could not read published tunnel state: %s", exc)
+        return JSONResponse(
+            {"error": "Could not read Cloudflare state from Supabase"},
+            status_code=503,
+        )
+
+
+@router.post("/api/tunnel/rotate")
+async def rotate_tunnel():
+    requested_at = request_tunnel_rotation()
+    logger.warning("Cloudflare Quick Tunnel rotation requested from dashboard")
+    return JSONResponse(
+        {
+            "accepted": True,
+            "requested_at": requested_at,
+            "message": "A fresh Cloudflare endpoint is being generated and will be published automatically.",
+        },
+        status_code=202,
+    )
 
 
 # ── Model Toggle (enable/disable) ────────────────────────────────────

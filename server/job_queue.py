@@ -94,6 +94,37 @@ class AiJobQueue:
                 return None
             return self._snapshot_locked(job)
 
+    async def overview(self) -> dict[str, Any]:
+        """Return privacy-safe queue telemetry for the local operations UI."""
+        async with self._lock:
+            now = time.time()
+            active = self._jobs.get(self._active_job_id or "")
+            oldest_wait = (
+                self._jobs.get(self._waiting[0]) if self._waiting else None
+            )
+            completed = sum(job.status == "completed" for job in self._jobs.values())
+            failed = sum(job.status == "failed" for job in self._jobs.values())
+            return {
+                "depth": len(self._waiting) + (1 if active else 0),
+                "waiting": len(self._waiting),
+                "processing": 1 if active else 0,
+                "worker_online": bool(self._worker and not self._worker.done()),
+                "active_job": (
+                    {
+                        "job_id": active.id,
+                        "model": str(active.payload.get("model") or "Unknown model"),
+                        "running_seconds": round(now - (active.started_at or now)),
+                    }
+                    if active
+                    else None
+                ),
+                "oldest_wait_seconds": (
+                    round(now - oldest_wait.submitted_at) if oldest_wait else 0
+                ),
+                "completed_retained": completed,
+                "failed_retained": failed,
+            }
+
     async def _run(self) -> None:
         while True:
             job_id = await self._queue.get()

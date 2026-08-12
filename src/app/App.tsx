@@ -191,7 +191,7 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen flex dark overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-[#f7f7f6] text-neutral-950">
       <ModelSidebar
         models={models}
         enabledModels={enabledModels}

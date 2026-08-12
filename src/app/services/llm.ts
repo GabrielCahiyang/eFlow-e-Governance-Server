@@ -7,6 +7,11 @@ const BASE = '/api';
 let cachedAuthKey: string | null = null;
 let authKeyPromise: Promise<string | null> | null = null;
 
+export function invalidateAuthKeyCache(): void {
+  cachedAuthKey = null;
+  authKeyPromise = null;
+}
+
 async function getAuthKey(): Promise<string | null> {
   if (cachedAuthKey) return cachedAuthKey;
   if (!authKeyPromise) {

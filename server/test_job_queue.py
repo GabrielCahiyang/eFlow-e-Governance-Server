@@ -25,6 +25,11 @@ class AiJobQueueTests(unittest.IsolatedAsyncioTestCase):
 
         second_waiting = await queue.snapshot(second["job_id"], "user-2")
         self.assertEqual(second_waiting["status"], "queued")
+        overview = await queue.overview()
+        self.assertEqual(overview["processing"], 1)
+        self.assertEqual(overview["waiting"], 1)
+        self.assertEqual(overview["depth"], 2)
+        self.assertTrue(overview["worker_online"])
         self.assertEqual(second_waiting["position"], 2)
         self.assertEqual(second_waiting["jobs_ahead"], 1)
         self.assertIsNone(await queue.snapshot(second["job_id"], "user-1"))

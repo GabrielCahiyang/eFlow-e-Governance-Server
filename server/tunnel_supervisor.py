@@ -10,6 +10,7 @@ from urllib.request import urlopen
 from tunnel_config import load_tunnel_settings
 from tunnel_process import QuickTunnelProcess, find_cloudflared
 from tunnel_state import TunnelStatePublisher
+from tunnel_control import consume_tunnel_rotation_request
 
 
 RESTARTING_MESSAGE = (
@@ -18,6 +19,10 @@ RESTARTING_MESSAGE = (
 )
 STARTING_MESSAGE = "The AI services are ready. The secure connection is starting."
 ONLINE_MESSAGE = "The AI service is online and its endpoint was published automatically."
+
+
+class TunnelRotationRequested(RuntimeError):
+    """Raised internally when an operator requests a fresh Quick Tunnel URL."""
 
 
 def _is_healthy(url: str, timeout_seconds: float = 3.0) -> bool:
@@ -49,6 +54,9 @@ class TunnelSupervisor:
         try:
             while not self._shutdown.is_set():
                 try:
+                    # A pending request is already satisfied by the fresh tunnel this
+                    # loop is about to create, so consume it before startup.
+                    consume_tunnel_rotation_request()
                     self._publish_with_retry("restarting", RESTARTING_MESSAGE)
                     executable = executable or find_cloudflared(
                         self._settings.cloudflared_path
@@ -79,7 +87,8 @@ class TunnelSupervisor:
                 except Exception as exc:
                     if self._shutdown.is_set():
                         break
-                    print(f"[WARN] Tunnel unavailable: {exc}", file=sys.stderr, flush=True)
+                    prefix = "[ROTATE]" if isinstance(exc, TunnelRotationRequested) else "[WARN]"
+                    print(f"{prefix} {exc}", file=sys.stderr, flush=True)
                     if self._tunnel:
                         self._tunnel.stop()
                         self._tunnel = None
@@ -122,6 +131,10 @@ class TunnelSupervisor:
             f"{tunnel_origin}{self._settings.public_api_suffix}/health"
         )
         while not self._shutdown.wait(self._settings.health_interval_seconds):
+            if consume_tunnel_rotation_request():
+                raise TunnelRotationRequested(
+                    "Dashboard requested a fresh Cloudflare Quick Tunnel URL."
+                )
             if not self._tunnel or self._tunnel.return_code is not None:
                 raise RuntimeError("cloudflared stopped unexpectedly")
             if not _is_healthy(self._settings.gateway_health_url):
