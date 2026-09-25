@@ -21,7 +21,12 @@ class TunnelStatePublisher:
         message: str,
         *,
         endpoint: str | None = None,
-    ) -> None:
+        require_owner: bool = False,
+    ) -> bool:
+        """Publish a new endpoint or refresh state owned by an existing one."""
+        if require_owner:
+            if not endpoint or self._read_value("ai_endpoint") != endpoint:
+                return False
         heartbeat = datetime.now(timezone.utc).isoformat()
         values = {
             "ai_endpoint_status": status,
@@ -32,22 +37,28 @@ class TunnelStatePublisher:
             values["ai_endpoint"] = endpoint
         self._upsert(values)
         self._last_heartbeat = time.monotonic()
+        return True
 
-    def heartbeat(self) -> None:
+    def heartbeat(self, endpoint: str | None) -> bool:
         """Refresh the online lease so clients can detect abrupt process death."""
+        if not endpoint or self._read_value("ai_endpoint") != endpoint:
+            return False
         if time.monotonic() - self._last_heartbeat < 15.0:
-            return
+            return True
         self._upsert(
             {"ai_endpoint_heartbeat": datetime.now(timezone.utc).isoformat()}
         )
         self._last_heartbeat = time.monotonic()
+        return True
 
     def mark_offline_if_owner(self, endpoint: str | None) -> None:
-        if endpoint and self._read_value("ai_endpoint") != endpoint:
+        if not endpoint or self._read_value("ai_endpoint") != endpoint:
             return
         self.publish(
             "offline",
             "The AI service is offline. Its automatic tunnel supervisor is not running.",
+            endpoint=endpoint,
+            require_owner=True,
         )
 
     def _headers(self) -> dict[str, str]:

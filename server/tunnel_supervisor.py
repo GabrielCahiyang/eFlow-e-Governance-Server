@@ -40,7 +40,7 @@ class TunnelSupervisor:
         self._shutdown = threading.Event()
         self._tunnel: QuickTunnelProcess | None = None
         self._public_endpoint: str | None = None
-        self._last_state: tuple[str, str, str | None] | None = None
+        self._last_state: tuple[str, str, str | None, bool] | None = None
 
     def request_shutdown(self, *_args) -> None:
         self._shutdown.set()
@@ -57,7 +57,6 @@ class TunnelSupervisor:
                     # A pending request is already satisfied by the fresh tunnel this
                     # loop is about to create, so consume it before startup.
                     consume_tunnel_rotation_request()
-                    self._publish_with_retry("restarting", RESTARTING_MESSAGE)
                     executable = executable or find_cloudflared(
                         self._settings.cloudflared_path
                     )
@@ -65,7 +64,7 @@ class TunnelSupervisor:
                     if self._shutdown.is_set():
                         break
 
-                    self._publish_with_retry("starting", STARTING_MESSAGE)
+                    print(f"[START] {STARTING_MESSAGE}", flush=True)
                     self._tunnel = QuickTunnelProcess(
                         executable,
                         self._settings.gateway_origin,
@@ -92,7 +91,13 @@ class TunnelSupervisor:
                     if self._tunnel:
                         self._tunnel.stop()
                         self._tunnel = None
-                    self._publish_with_retry("restarting", RESTARTING_MESSAGE)
+                    self._publish_with_retry(
+                        "restarting",
+                        RESTARTING_MESSAGE,
+                        endpoint=self._public_endpoint,
+                        require_owner=True,
+                    )
+                    self._public_endpoint = None
                     self._shutdown.wait(retry_delay)
                     retry_delay = min(retry_delay * 2, 60.0)
         finally:
@@ -146,6 +151,7 @@ class TunnelSupervisor:
                     "online" if ai_ready else "restarting",
                     ONLINE_MESSAGE if ai_ready else RESTARTING_MESSAGE,
                     endpoint=self._public_endpoint,
+                    require_owner=True,
                 )
                 print(
                     "[AI] Local AI service is online."
@@ -165,7 +171,7 @@ class TunnelSupervisor:
                     flush=True,
                 )
             try:
-                self._publisher.heartbeat()
+                self._publisher.heartbeat(self._public_endpoint)
             except Exception as exc:
                 print(
                     f"[WARN] Supabase heartbeat delayed: {exc}",
@@ -179,12 +185,21 @@ class TunnelSupervisor:
         message: str,
         *,
         endpoint: str | None = None,
-    ) -> None:
-        state = (status, message, endpoint)
+        require_owner: bool = False,
+    ) -> bool:
+        state = (status, message, endpoint, require_owner)
         if state == self._last_state:
-            return
-        self._publisher.publish(status, message, endpoint=endpoint)
+            return True
+        published = self._publisher.publish(
+            status,
+            message,
+            endpoint=endpoint,
+            require_owner=require_owner,
+        )
+        if not published:
+            return False
         self._last_state = state
+        return True
 
     def _publish_with_retry(
         self,
@@ -192,10 +207,18 @@ class TunnelSupervisor:
         message: str,
         *,
         endpoint: str | None = None,
+        require_owner: bool = False,
     ) -> None:
         while not self._shutdown.is_set():
             try:
-                self._publish(status, message, endpoint=endpoint)
+                published = self._publish(
+                    status,
+                    message,
+                    endpoint=endpoint,
+                    require_owner=require_owner,
+                )
+                if not published:
+                    return
                 return
             except Exception as exc:
                 print(

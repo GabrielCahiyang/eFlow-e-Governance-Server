@@ -16,9 +16,9 @@ REM Change to the directory where this script lives
 cd /d "%~dp0"
 
 REM Activate venv and run the supervisor. It keeps the private AI server and
-REM automatic Cloudflare endpoint publisher alive. The eFlow gateway remains
-REM a separate process on port 8322.
-echo Starting AI server and automatic tunnel supervisor …
+REM automatic Cloudflare endpoint publisher alive. An embedded JWT-protected
+REM AI gateway starts on port 8322 unless EflowWeb already owns it.
+echo Starting AI server, secure gateway, and automatic tunnel supervisor …
 echo.
 
 if exist ".venv\Scripts\activate.bat" (

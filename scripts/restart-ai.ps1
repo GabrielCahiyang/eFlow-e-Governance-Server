@@ -3,6 +3,7 @@ param()
 $repoPath = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $aiProcessPatterns = @(
     "*Ollama reactjs LLM DeepSeek Integration*server\main.py*",
+    "*Ollama reactjs LLM DeepSeek Integration*server\public_gateway.py*",
     "*Ollama reactjs LLM DeepSeek Integration*server\start.py*",
     "*Ollama reactjs LLM DeepSeek Integration*server\tunnel_supervisor.py*",
     "*Ollama reactjs LLM DeepSeek Integration*concurrently\dist\bin\concurrently.js*",

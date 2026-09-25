@@ -10,10 +10,9 @@ This script:
 1. Creates a Python virtual environment (server/.venv) if it doesn't exist
 2. Installs requirements.txt into the venv
 3. Supervises the private FastAPI server on port 8321
-4. Supervises the automatic Cloudflare/Supabase endpoint publisher
-
-The eFlow gateway on port 8322 remains a separate service. The tunnel
-supervisor waits for it and never starts or owns that process.
+4. Starts an embedded, JWT-protected AI gateway on port 8322 when a full
+   eFlow gateway is not already running there
+5. Supervises the automatic Cloudflare/Supabase endpoint publisher
 """
 
 import os
@@ -23,6 +22,10 @@ import platform
 import signal
 import time
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlopen
+
+from dotenv import load_dotenv
 
 # Fix Windows console encoding
 if sys.platform == "win32":
@@ -37,9 +40,37 @@ SERVER_DIR = Path(__file__).parent.resolve()
 VENV_DIR = SERVER_DIR / ".venv"
 REQUIREMENTS = SERVER_DIR / "requirements.txt"
 
+# The launcher also needs the host settings that the child services read.
+load_dotenv(SERVER_DIR.parent / ".env")
+
 IS_WINDOWS = platform.system() == "Windows"
 PYTHON_BIN = VENV_DIR / ("Scripts" if IS_WINDOWS else "bin") / ("python.exe" if IS_WINDOWS else "python")
 PIP_BIN = VENV_DIR / ("Scripts" if IS_WINDOWS else "bin") / ("pip.exe" if IS_WINDOWS else "pip")
+
+
+def _gateway_health_url() -> str:
+    origin = os.getenv("EFLOW_GATEWAY_ORIGIN", "http://127.0.0.1:8322").rstrip("/")
+    return os.getenv(
+        "EFLOW_GATEWAY_HEALTH_URL",
+        f"{origin}/controlpanelEflow/api/health",
+    )
+
+
+def _gateway_is_healthy() -> bool:
+    try:
+        with urlopen(_gateway_health_url(), timeout=2) as response:
+            return response.status == 200
+    except (URLError, OSError):
+        return False
+
+
+def _gateway_mode() -> str:
+    mode = os.getenv("EFLOW_GATEWAY_MODE", "auto").strip().lower()
+    if mode not in {"auto", "embedded", "external"}:
+        raise RuntimeError(
+            "EFLOW_GATEWAY_MODE must be auto, embedded, or external."
+        )
+    return mode
 
 
 def find_python() -> str:
@@ -158,19 +189,40 @@ def _stop_child(process: subprocess.Popen | None) -> None:
 
 
 def supervise_services() -> int:
-    """Keep both the AI API and tunnel supervisor alive until shutdown."""
+    """Keep the local AI host, public gateway, and tunnel publisher alive."""
     print("\n[START] Supervising private AI API on 127.0.0.1:8321")
     print("[START] Supervising automatic Cloudflare endpoint publishing")
-    print("[INFO]  The separate eFlow gateway must be running on 127.0.0.1:8322")
     print(f"[INFO]  Models directory: {SERVER_DIR.parent / 'models'}\n")
 
     commands = {
         "AI server": [str(PYTHON_BIN), str(SERVER_DIR / "main.py")],
-        "tunnel supervisor": [
-            str(PYTHON_BIN),
-            str(SERVER_DIR / "tunnel_supervisor.py"),
-        ],
     }
+    gateway_mode = _gateway_mode()
+    external_gateway_is_ready = _gateway_is_healthy()
+    if gateway_mode == "external":
+        print(
+            f"[INFO]  Waiting for the external eFlow gateway at {_gateway_health_url()}",
+            flush=True,
+        )
+    elif gateway_mode == "auto" and external_gateway_is_ready:
+        print(
+            f"[INFO]  Using the existing eFlow gateway at {_gateway_health_url()}",
+            flush=True,
+        )
+    else:
+        commands["embedded AI gateway"] = [
+            str(PYTHON_BIN),
+            str(SERVER_DIR / "public_gateway.py"),
+        ]
+        print(
+            "[START] Starting the embedded JWT-protected AI gateway on "
+            "127.0.0.1:8322",
+            flush=True,
+        )
+    commands["tunnel supervisor"] = [
+        str(PYTHON_BIN),
+        str(SERVER_DIR / "tunnel_supervisor.py"),
+    ]
     processes: dict[str, subprocess.Popen | None] = {
         name: None for name in commands
     }

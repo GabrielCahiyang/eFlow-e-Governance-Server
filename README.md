@@ -10,7 +10,7 @@ This system serves as a centralized command center for your local AI backend. It
 
 eFlow requests use the server-owned `/controlpanelEflow/api/jobs` FIFO queue. The node executes one non-streaming DeepSeek job at a time, exposes owner-scoped status polling through the gateway, and automatically begins the next waiting request when the active request finishes.
 
-`server/start.py` supervises the private AI process and the Cloudflare Quick Tunnel publisher. The eFlow gateway on `127.0.0.1:8322` remains a separate service owned by the eFlow repository; the publisher waits for it, tunnels only that gateway, writes every new Quick Tunnel URL directly to Supabase `system_config`, and restarts the tunnel automatically after a failure. No administrator copies or enters the URL.
+`server/start.py` supervises the private AI process and the Cloudflare Quick Tunnel publisher. It starts an embedded JWT-protected AI gateway on `127.0.0.1:8322` when a full eFlow gateway is not already running on that host. The publisher tunnels only that gateway, writes every new Quick Tunnel URL directly to Supabase `system_config`, and restarts the tunnel automatically after a failure. No administrator copies or enters the URL.
 
 The tunnel and gateway remain available for eFlow Admin/control operations while the local model process restarts. Only AI-backed actions are gated by `ai_endpoint_status`; a DeepSeek outage does not disable normal eFlow task, project, user-management, or reporting workflows.
 
@@ -332,23 +332,17 @@ npm install
 
 Python setup is automatic: `server/start.py` creates `server/.venv` and installs `server/requirements.txt` on first run.
 
-### 3. Start eFlow and the AI host
+### 3. Start the AI host
 
-The repositories are intentionally independent and must be started from separate terminals:
+For AI decomposition on a separate laptop, start this repository only:
 
 ```powershell
-# Terminal 1 — eFlow web and JWT-protected gateway on port 8322
-Set-Location "C:\Users\gabri\OneDrive\Desktop\EflowWeb"
-npm install
-npm run dev
-
-# Terminal 2 — private AI API, queue worker, dashboard, and tunnel publisher
 Set-Location "C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration"
 npm install
 npm run dev
 ```
 
-The eFlow command starts only eFlow. The AI command starts only this repository's AI backend, dashboard, queue, and tunnel publisher; it never starts the eFlow frontend.
+The launcher starts the private model API, an embedded JWT-protected AI gateway, the dashboard, and the tunnel publisher. It uses an already-running full eFlow gateway on port `8322` when one is available instead. Set `EFLOW_GATEWAY_MODE=external` to require that full gateway, or `EFLOW_GATEWAY_MODE=embedded` to force the AI-only gateway. The embedded gateway exposes `/health` and `/ai/*`, which is enough for remote proposal decomposition; use the full eFlow gateway for its other administrative control routes.
 
 On AI startup the system will:
 
@@ -356,7 +350,7 @@ On AI startup the system will:
 - start the private model API on `127.0.0.1:8321`;
 - start the FIFO worker that executes one non-streaming job at a time;
 - start the AI dashboard on `http://localhost:5175`;
-- wait for the separately owned eFlow gateway on `127.0.0.1:8322`;
+- start the embedded JWT-protected AI gateway on `127.0.0.1:8322` when needed;
 - create a Quick Tunnel to that gateway;
 - publish `ai_endpoint`, `ai_endpoint_status`, `ai_endpoint_status_message`, and `ai_endpoint_heartbeat` to Supabase.
 
@@ -376,7 +370,7 @@ Use this after changing the AI backend or when old AI/tunnel processes are stuck
 npm run restart
 ```
 
-The restart script terminates only processes belonging to this AI repository and Quick Tunnels targeting `127.0.0.1:8322`, then launches the normal AI development stack. It does not terminate eFlow's Vite frontend or gateway.
+The restart script terminates only processes belonging to this AI repository and Quick Tunnels targeting `127.0.0.1:8322`, then launches the normal AI development stack. It does not terminate a separately running full eFlow gateway.
 
 > Models are automatically downloaded from HuggingFace when first activated.
 
@@ -462,14 +456,7 @@ Remote eFlow traffic follows a separate path: eFlow browser → Cloudflare Quick
 
 ### `Waiting for eFlow gateway :8322`
 
-This is not an AI crash. The tunnel intentionally exposes the authenticated eFlow gateway rather than raw port `8321`. Start eFlow in its own terminal:
-
-```powershell
-Set-Location "C:\Users\gabri\OneDrive\Desktop\EflowWeb"
-npm run dev
-```
-
-Confirm `http://127.0.0.1:8322/controlpanelEflow/api/health` returns `eflow-control-gateway`. The AI supervisor will detect it automatically and continue with Cloudflare; do not paste a tunnel URL into eFlow manually.
+With the current launcher, this normally means either port `8322` is occupied by an unhealthy process or `EFLOW_GATEWAY_MODE=external` was set and the full eFlow gateway is not running. Confirm `http://127.0.0.1:8322/controlpanelEflow/api/health` returns `eflow-control-gateway`. In the default `auto` mode, remove the conflicting process and restart this AI repository; it starts the embedded gateway and continues with Cloudflare automatically.
 
 ### Duplicate AI processes, repeated retries, or port `5175`/`8321` already in use
 
