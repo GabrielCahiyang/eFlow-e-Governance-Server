@@ -40,6 +40,10 @@ class TunnelSupervisor:
         self._shutdown = threading.Event()
         self._tunnel: QuickTunnelProcess | None = None
         self._public_endpoint: str | None = None
+        # Tracks the last endpoint we successfully published so the finally block
+        # can mark Supabase offline even after _public_endpoint is cleared during
+        # a crash / rotation cycle.
+        self._last_published_endpoint: str | None = None
         self._last_state: tuple[str, str, str | None, bool] | None = None
 
     def request_shutdown(self, *_args) -> None:
@@ -80,6 +84,9 @@ class TunnelSupervisor:
                         ONLINE_MESSAGE if ai_ready else RESTARTING_MESSAGE,
                         endpoint=self._public_endpoint,
                     )
+                    # Record the endpoint we just published so the finally block can
+                    # mark it offline on a clean or unclean exit.
+                    self._last_published_endpoint = self._public_endpoint
                     print(f"[ONLINE] Published {self._public_endpoint}", flush=True)
                     retry_delay = self._settings.retry_seconds
                     self._monitor_tunnel(tunnel_origin)
@@ -103,8 +110,12 @@ class TunnelSupervisor:
         finally:
             if self._tunnel:
                 self._tunnel.stop()
+            # Use _last_published_endpoint as a fallback so we always mark the
+            # last-known Supabase endpoint as offline, even when _public_endpoint
+            # was cleared to None during a crash or rotation cycle.
+            offline_endpoint = self._public_endpoint or self._last_published_endpoint
             try:
-                self._publisher.mark_offline_if_owner(self._public_endpoint)
+                self._publisher.mark_offline_if_owner(offline_endpoint)
             except Exception as exc:
                 print(f"[WARN] Could not publish offline status: {exc}", file=sys.stderr)
         return 0

@@ -52,13 +52,15 @@ class TunnelStatePublisher:
         return True
 
     def mark_offline_if_owner(self, endpoint: str | None) -> None:
-        if not endpoint or self._read_value("ai_endpoint") != endpoint:
+        current_endpoint = self._read_value("ai_endpoint")
+        if endpoint and current_endpoint and current_endpoint != endpoint:
             return
+        target = current_endpoint or endpoint
         self.publish(
             "offline",
             "The AI service is offline. Its automatic tunnel supervisor is not running.",
-            endpoint=endpoint,
-            require_owner=True,
+            endpoint=target,
+            require_owner=False,
         )
 
     def _headers(self) -> dict[str, str]:
