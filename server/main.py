@@ -884,6 +884,14 @@ async def _stream_chat(llm, messages: list[dict], model_tag: str):
 
 app.include_router(router, prefix=ROUTE_PREFIX)
 
+# ── Mount feature sub-routers ─────────────────────────────────────────
+
+from routers.optimization import router as optimization_router  # noqa: E402
+from routers.blockchain import router as blockchain_router       # noqa: E402
+
+app.include_router(optimization_router, prefix=ROUTE_PREFIX)
+app.include_router(blockchain_router, prefix=ROUTE_PREFIX)
+
 
 # ── Main ──────────────────────────────────────────────────────────────
 

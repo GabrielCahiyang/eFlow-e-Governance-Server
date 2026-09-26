@@ -16,7 +16,10 @@ The tunnel and gateway remain available for eFlow Admin/control operations while
 
 ### Key Features
 
-- **🧠 Local Model Backend**: The server downloads and runs registered GGUF models directly through `llama-cpp-python`.
+- **🧠 Local Model Backend**: The server downloads and runs registered GGUF models directly through `llama-cpp-python` with CUDA acceleration.
+- **🏛️ Laya Decision Layer**: System-1 bounded governance engine for municipal routing (IT, GSO, CPDO, LEDIPO, BPLO, Budget, HRMO), statutory BAC / cash-advance clearance, urgency classification, and personnel skill matching.
+- **🧬 PyGAD Process Optimization**: Multi-objective genetic algorithm solving RCPSP (Resource-Constrained Project Scheduling), workload leveling, and knapsack budget allocation across municipal proposals.
+- **⛓️ Polygon Blockchain Audit Ledger**: Calldata-only immutable anchoring on Polygon Amoy (Chain ID 80002) providing tamper-proof SHA-256 genesis, milestone, and clearance receipts.
 - **🎛️ LLM Activation Panel**: Instantly enable, disable, or hot-swap models using intuitive UI toggles.
 - **📊 Live Operations Dashboard**: Monitor actual GPU utilization, VRAM allocation, GPU temperature, power draw, CPU/RAM use, process memory, uptime, and model workload.
 - **🔑 Private Internal Authentication**: The model key is loaded server-side from Supabase `app_config`, used only by the local dashboard and eFlow gateway, and never returned to the deployed browser.
@@ -101,6 +104,65 @@ Returns live GPU, VRAM, temperature, power, system memory/CPU, private-process, 
 - **GET** `/controlpanelEflow/api/tunnel/status` reads the endpoint and heartbeat currently stored in Supabase `system_config`.
 - **POST** `/controlpanelEflow/api/tunnel/rotate` asks the separate tunnel supervisor for a fresh Quick Tunnel. The replacement URL is published automatically; callers never paste or overwrite `ai_endpoint` themselves.
 
+### 8. Laya Decision Layer: Proposal Decomposition (`/api/chat`)
+
+The server automatically intercepts proposal decomposition prompts originating from eFlow's `DraftCockpit` (identified by section title, team roster, and budget parameters). 
+
+**Processing Pipeline**:
+1. DeepSeek R1 8B extracts pure Work Breakdown Structure (WBS) tasks, subtasks, and skill tags.
+2. The pipeline pipes R1's structured output into the **Laya Decision Layer** (`server/laya_service.py`).
+3. Laya applies System-1 bounded governance heuristics to inject:
+   - **Municipal Routing**: Assigns target office (`IT`, `LEDIPO`, `CPDO`, `BPLO`, `GSO/Procurement`, `Budget/Accounting`, or `HRMO`).
+   - **Governance & Statutory Clearance**: Detects statutory mandates (`BAC Resolution`, `Petty Cash / Cash Advance`, or standard execution).
+   - **Priority & Urgency**: Classifies `High`, `Med`, or `Low` with confidence scores based on deadlines, critical-path status, and budget scale.
+   - **Personnel Recommendation**: Computes skill-overlap vectors against available municipal staff and suggests optimal employee assignment.
+   - **Compliance Audit Reasoning**: Generates an audit trail rationale justifying the routing and clearance.
+4. Returns the exact JSON structure expected by eFlow's frontend without requiring client-side translation.
+
+### 9. PyGAD Process Optimization (`/api/optimization/optimize-proposal`)
+
+Executes multi-objective Genetic Algorithm optimization over proposal tasks and employee rosters.
+
+**POST** `http://127.0.0.1:8321/controlpanelEflow/api/optimization/optimize-proposal`
+
+**Request Body (JSON):**
+```json
+{
+  "tasks": [
+    {
+      "title": "Configure Fiber Backbone & Core Switches",
+      "estimatedDuration": "3 weeks",
+      "requiredSkills": ["Networking", "Infrastructure"],
+      "budgetLines": [{"amount": 250000, "category": "Capital Outlay"}]
+    }
+  ],
+  "employees": [
+    {
+      "id": "emp-01",
+      "name": "Engr. Santos",
+      "skills": ["Networking", "Systems Admin"],
+      "workload": 2
+    }
+  ],
+  "profile": "balanced",
+  "num_generations": 40
+}
+```
+
+**Optimization Profiles**:
+- `balanced`: Harmonizes skill suitability (35%), workload variance (25%), risk (20%), and schedule (15%).
+- `fast_track`: Minimizes makespan and prioritizes parallel critical-path execution (schedule 45%, skill 30%).
+- `low_risk`: Heavily penalizes employee weaknesses and burnout thresholds (risk 35%, workload 30%, skill 25%).
+
+### 10. Polygon Blockchain Governance Ledger (`/api/blockchain/*`)
+
+Anchors municipal lifecycle events onto the Polygon Amoy Testnet (Chain ID `80002`) using 0-MATIC calldata transactions.
+
+- **POST** `/controlpanelEflow/api/blockchain/anchor-proposal` — Computes canonical SHA-256 hash of proposal data and anchors the genesis record on-chain. Returns `tx_hash`, `block_number`, and `explorer_url`.
+- **POST** `/controlpanelEflow/api/blockchain/anchor-event` — Anchors governance milestone clearances (e.g. `bac_clearance`, `cash_advance_release`, `milestone_approval`).
+- **GET** `/controlpanelEflow/api/blockchain/verify/{doc_hash}?tx_hash=0x...` — Verifies on-chain calldata integrity against the recomputed document hash.
+- **GET** `/controlpanelEflow/api/blockchain/certificate/{proposal_id}` — Generates a verifiable chain-of-custody audit certificate with chronological block timestamps.
+
 ---
 
 ## 📋 Requirements
@@ -180,10 +242,16 @@ models/
 
 ## 🛠️ Technology Stack
 
-- **Frontend**: React 18, TypeScript, Vite, Tailwind CSS (v4), Lucide Icons
-- **Backend**: Python, FastAPI, llama-cpp-python (CUDA enabled)
-- **Runtime data**: Supabase for the internal key, AI usage logs, Quick Tunnel discovery/status, and heartbeats; Firebase remains only where the legacy local dashboard still uses it.
-- **Models**: GGUF format, auto-downloaded from HuggingFace
+| Layer | Technologies | Role & Purpose |
+| :--- | :--- | :--- |
+| **LLM Runtime & Inference** | **llama-cpp-python (CUDA 12.4/12.6)**, **GGUF** | Hardware-accelerated local LLM inference offloaded to NVIDIA GPU VRAM (`n_gpu_layers=99`). Auto-downloads quantized models from HuggingFace Hub. |
+| **Decision Intelligence (Laya)** | **Laya Router (`convaiinnovations/laya-typed-decisions`)**, Municipal Rule Engine | System-1 bounded governance routing, statutory BAC clearance detection, priority classification, and personnel skill matching. |
+| **Process Optimization** | **PyGAD (Genetic Algorithms)**, **NumPy** | Multi-objective Pareto optimization solving the Resource-Constrained Project Scheduling Problem (RCPSP), workload leveling, and knapsack budget allocation. |
+| **Blockchain Governance** | **Web3.py**, **Polygon Amoy Testnet (Chain ID 80002)** | Calldata-only 0-MATIC immutable anchoring for proposal genesis, BAC resolutions, and milestone certificates. |
+| **Backend & API Layer** | **Python 3.10+**, **FastAPI**, **Uvicorn**, **Pydantic v2** | High-concurrency async REST API, FIFO request queuing, SSE streaming log ring-buffer, and hardware telemetry. |
+| **Ingress & Networking** | **Cloudflare Quick Tunnels (`cloudflared`)**, **JWT Gateway (:8322)** | Zero-trust remote gateway publishing disposable secure public endpoints dynamically to Supabase without manual DNS/port forwarding. |
+| **Persistence & Audit** | **Supabase (PostgreSQL + RLS)**, **Firebase RTDB (legacy)** | Stores dynamic tunnel configuration (`system_config`), internal authentication keys (`app_config`), audit trails, and heartbeats. |
+| **Control Dashboard UI** | **React 18**, **TypeScript**, **Vite**, **Tailwind CSS v4**, **Lucide Icons** | Real-time monitoring console for GPU temperature, VRAM usage, active models, FIFO queue states, tunnel status, and live SSE logs. |
 
 ---
 
@@ -399,6 +467,13 @@ npm run dev:frontend-only
 - `src/app/services/serverLogs.ts` — Hook for streaming and parsing backend logs
 - `src/app/services/authKeyService.ts` — Local dashboard client for backend-managed internal keys
 - `server/main.py` — FastAPI backend server
+- `server/laya_service.py` — Laya Decision Layer (System-1 Bounded Decision Service: municipal routing, statutory clearance, personnel matching)
+- `server/proposal_pipeline.py` — Proposal decomposition pipeline (DeepSeek R1 WBS extraction + Laya enrichment)
+- `server/pygad_optimizer.py` — PyGAD Multi-Objective Genetic Algorithm optimizer (RCPSP, Pareto allocation, knapsack budget)
+- `server/polygon_service.py` — Polygon Amoy Blockchain ledger (SHA-256 0-MATIC calldata anchoring, verification, and certificates)
+- `server/routers/optimization.py` — FastAPI router for `/controlpanelEflow/api/optimization/`
+- `server/routers/blockchain.py` — FastAPI router for `/controlpanelEflow/api/blockchain/`
+- `server/public_gateway.py` — Embedded JWT-protected public gateway (`127.0.0.1:8322`)
 - `server/model_registry.py` — Model definitions and HuggingFace download manager
 - `server/server_logging.py` — Log ring-buffer and SSE broadcasting
 - `server/start.py` — Auto-setup and launch script
@@ -413,30 +488,108 @@ npm run dev:frontend-only
 
 ---
 
-## 💡 Architecture
+## 💡 Architecture & End-to-End System Flow
 
+```mermaid
+flowchart TD
+    subgraph Client ["eFlow Client Applications (Remote / Browser)"]
+        Browser["eFlow Web Client (Next.js / React)\nDraftCockpit & Governance Portals"]
+        AdminUI["Admin & Operations Dashboards"]
+    end
+
+    subgraph Ingress ["Zero-Trust Ingress & Tunnel Layer"]
+        CF["Cloudflare Quick Tunnel\n(Auto-published to Supabase)"]
+        Gateway["eFlow Gateway (127.0.0.1:8322)\nJWT Auth & Session Owner Verification"]
+    end
+
+    subgraph Core_Backend ["Private AI Server (127.0.0.1:8321)"]
+        Queue["FIFO Job Queue\n(One active non-streaming job at a time)"]
+        FastAPI["FastAPI Orchestrator (/controlpanelEflow)"]
+        
+        subgraph AI_Engines ["AI & Decision Engines"]
+            DeepSeek["DeepSeek R1 8B\n(CUDA llama-cpp-python)\nWBS Extraction"]
+            Laya["Laya Decision Layer (System-1)\nMunicipal Routing & Statutory Clearance"]
+            PyGAD["PyGAD Genetic Algorithm\nMulti-Objective RCPSP Optimization"]
+        end
+        
+        subgraph Trust_Audit ["Blockchain & Telemetry"]
+            Polygon["Polygon Amoy Testnet\n0-MATIC Calldata Ledger"]
+            Telemetry["System Metrics & SSE Logs\n(GPU / VRAM / Heartbeats)"]
+        end
+    end
+
+    subgraph Data_Layer ["Supabase & On-Chain State"]
+        SupaConfig["system_config / app_config\n(Auto Tunnel URL & Internal API Key)"]
+        SupaLogs["ai_usage_logs / audit_records"]
+        Amoy["Polygon Blockchain (Chain ID 80002)\nImmutable SHA-256 Receipts"]
+    end
+
+    Browser -->|"1. Fetches current endpoint"| SupaConfig
+    Browser -->|"2. POST /controlpanelEflow/api/jobs (User JWT)"| CF
+    CF --> Gateway
+    Gateway -->|"3. Injects internal key via loopback"| Queue
+    Queue --> FastAPI
+    
+    FastAPI --> DeepSeek
+    DeepSeek -->|"Structured WBS"| Laya
+    Laya -->|"Enriched WBS + Personnel + Clearance"| FastAPI
+    
+    FastAPI --> PyGAD
+    PyGAD -->|"Optimized Schedules & Allocation"| FastAPI
+    
+    FastAPI --> Polygon
+    Polygon -->|"Anchors Genesis / Milestones"| Amoy
+    
+    Telemetry --> SupaLogs
+    FastAPI -->|"Job Result Polling"| Gateway
+    Gateway --> Browser
 ```
-AI Dashboard Frontend (Vite :5175)
-        ↓
-Vite Proxy (/controlpanelEflow)
-        ↓
-Private Python FastAPI Backend (127.0.0.1:8321)
-        ↓
-llama-cpp-python (CUDA)
-        ↓
-./models/*.gguf (VRAM)
-```
 
-Remote eFlow traffic follows a separate path: eFlow browser → Cloudflare Quick Tunnel → JWT-protected eFlow gateway on `127.0.0.1:8322` → owner-scoped FIFO queue on this private server → DeepSeek.
+### 🏛️ 1. The LAYA Decision Layer (System-1 Governance Engine)
 
-### Authentication & Security
-- **Internal API key**: The backend loads `llm_auth_key` from Supabase `app_config`. Only the local dashboard and eFlow gateway use it; deployed eFlow clients use their normal Supabase JWT instead.
-- **eFlow boundary**: The deployed eFlow browser uses its Supabase session against the gateway and never receives this internal API key.
-- **Route Prefix**: All API endpoints are served under `/controlpanelEflow/` (e.g. `/controlpanelEflow/api/chat`).
-- **Queue ownership**: The gateway derives the owner from the verified Supabase session, and the AI server prevents users from polling jobs they do not own.
-- **Audit and runtime data**: Backend usage logs and automatic endpoint state are written to Supabase; live dashboard logs continue through SSE.
+In municipal governance, raw LLMs cannot be trusted to unilaterally make statutory determinations. The **Laya Decision Layer** (`server/laya_service.py`) acts as a System-1 bounded governance router:
 
----
+- **Municipal Office Routing**: Classifies tasks and assigns official departmental custody:
+  - `Information Technology & Digital Services` (network, servers, digital portals, cybersecurity)
+  - `General Services Office / Procurement` (canvass, bidding, BAC, supplies, purchase orders)
+  - `City Planning & Development Office (CPDO)` (master plans, spatial analysis, zoning, GIS)
+  - `Local Economic Development & Investment (LEDIPO)` (trade fairs, MSMEs, tourism, livelihood)
+  - `Business Permits & Licensing Office (BPLO)` (permits, safety inspection, ordinance compliance)
+  - `City Budget & Accounting Office` (vouchers, disbursements, COA audits, liquidations, petty cash)
+  - `Human Resource & Administration (HRMO)` (capacity building, staff onboarding, training)
+- **Statutory Clearance Detection**: Flags statutory requirements:
+  - `BAC Resolution Required`: Triggered when tasks involve equipment procurement, contracts, or bidding.
+  - `Petty Cash / Cash Advance Clearance`: Triggered for operational stipends, transport allowances, or perishable supplies.
+  - `Standard Execution`: For administrative reviews and scheduled activities.
+- **Role & Personnel Vector Matching**: Evaluates team members using a 0–100 alignment score based on employee skill tokens, strengths, and title relevance, while strictly applying weakness penalties.
+- **Audit Reasoning Generation**: Produces explainable justifications for administrative accountability.
+
+### 🧬 2. PyGAD Multi-Objective Genetic Algorithm Optimizer
+
+The optimization engine (`server/pygad_optimizer.py`) resolves the **Resource-Constrained Project Scheduling Problem (RCPSP)** and workforce allocation using multi-objective genetic algorithms:
+
+- **Fitness Function Formulation**:
+  $$\text{Fitness} = w_{\text{skill}} \cdot S_{\text{overlap}} + w_{\text{workload}} \cdot (100 - \sigma_{\text{workload}}) + w_{\text{risk}} \cdot (100 - P_{\text{weakness}}) + w_{\text{schedule}} \cdot S_{\text{makespan}} + w_{\text{budget}} \cdot B_{\text{compliance}}$$
+- **Optimization Profiles**:
+  - `balanced` (default): Harmonizes skill matching (35%), workload leveling (25%), risk aversion (20%), and timeline efficiency (15%).
+  - `fast_track`: Minimizes makespan by parallelizing non-dependent critical-path tasks (schedule weight 45%).
+  - `low_risk`: Prioritizes employee burnout thresholds and penalizes known personnel weaknesses (risk 35%, workload 30%).
+- **Knapsack Budget Constraint**: Evaluates budget categories (Capital Outlay, MOOE, Personnel Services) against municipal budget caps.
+
+### ⛓️ 3. Polygon Blockchain Audit Ledger
+
+To provide non-repudiation and immutable oversight for municipal projects, the server incorporates an on-chain anchoring system (`server/polygon_service.py`):
+
+- **Calldata-Only Anchoring**: Computes canonical `SHA-256` hashes of proposal payloads and sends 0-MATIC transactions to Polygon Amoy Testnet (Chain ID `80002`) with the hash stored in the transaction's `data` field. This eliminates smart contract attack surfaces and deployment friction.
+- **Genesis & Milestone Receipts**: Records `proposal_id`, `event_type` (`genesis`, `bac_clearance`, `cash_advance_release`, `approval`), `document_hash`, `tx_hash`, and `block_number`.
+- **Chain-of-Custody Verification**: Public endpoints allow any auditor or citizen to verify that the local database state matches on-chain calldata without relying on centralized promises.
+
+### 🔒 4. Authentication, Security & Ingress Boundary
+
+- **Private Loopback Isolation**: Port `8321` binds strictly to `127.0.0.1`. Remote clients never hit this port directly.
+- **JWT Gateway Ingress**: Remote eFlow clients connect via Cloudflare Quick Tunnel to port `8322`. The gateway verifies the user's Supabase JWT before attaching the internal `llm_auth_key` and proxying to port `8321`.
+- **Zero-Touch Dynamic Tunnel Discovery**: `server/tunnel_supervisor.py` spins up `cloudflared`, intercepts the generated `trycloudflare.com` URL, writes it directly into Supabase `system_config`, and emits periodic heartbeats. eFlow clients poll Supabase to discover the current URL automatically.
+- **FIFO Request Serialization**: Only one DeepSeek reasoning job runs at a time in CUDA VRAM. Additional requests receive queue positions (`{"queue_position": N}`) and poll until completion, preventing GPU VRAM out-of-memory crashes.
 
 ## 🖥️ VRAM Requirements
 
