@@ -53,6 +53,10 @@ from job_queue import AiJobQueue
 from system_metrics import read_system_metrics
 from tunnel_control import request_tunnel_rotation, read_tunnel_state
 
+from proposal_pipeline import (
+    is_proposal_decomposition_prompt,
+    execute_proposal_pipeline,
+)
 from model_registry import (
     ModelEntry,
     get_model,
@@ -642,6 +646,8 @@ async def chat(request: Request, model_tag: Optional[str] = None):
             media_type="application/x-ndjson",
         )
     else:
+        if is_proposal_decomposition_prompt(chat_messages):
+            return execute_proposal_pipeline(llm, chat_messages, model_tag)
         return _sync_chat(llm, chat_messages, model_tag)
 
 
@@ -713,7 +719,10 @@ def _execute_queued_chat(body: dict) -> dict:
         }
         for message in body.get("messages", [])
     ]
-    response = _sync_chat(llm, chat_messages, model_tag)
+    if is_proposal_decomposition_prompt(chat_messages):
+        response = execute_proposal_pipeline(llm, chat_messages, model_tag)
+    else:
+        response = _sync_chat(llm, chat_messages, model_tag)
     if isinstance(response, JSONResponse):
         payload = json.loads(response.body.decode("utf-8"))
         raise RuntimeError(payload.get("error", "Queued AI request failed"))
