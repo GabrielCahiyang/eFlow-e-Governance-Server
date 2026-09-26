@@ -1,8 +1,8 @@
 # eFlow Server Side
 
-A premium, high-performance React dashboard for managing, monitoring, and controlling local Large Language Models (LLMs).
+Local AI inference backend, administrative control console, and governance services for the eFlow platform.
 
-## 🚀 Overview
+## Overview
 
 This system serves as a centralized command center for your local AI backend. It runs models directly using a built-in Python backend powered by `llama-cpp-python` with CUDA GPU acceleration.
 
@@ -16,23 +16,23 @@ The tunnel and gateway remain available for eFlow Admin/control operations while
 
 ### Key Features
 
-- **🧠 Local Model Backend**: The server downloads and runs registered GGUF models directly through `llama-cpp-python` with CUDA acceleration.
-- **🏛️ Laya Decision Layer**: System-1 bounded governance engine for municipal routing (IT, GSO, CPDO, LEDIPO, BPLO, Budget, HRMO), statutory BAC / cash-advance clearance, urgency classification, and personnel skill matching.
-- **🧬 PyGAD Process Optimization**: Multi-objective genetic algorithm solving RCPSP (Resource-Constrained Project Scheduling), workload leveling, and knapsack budget allocation across municipal proposals.
-- **⛓️ Polygon Blockchain Audit Ledger**: Calldata-only immutable anchoring on Polygon Amoy (Chain ID 80002) providing tamper-proof SHA-256 genesis, milestone, and clearance receipts.
-- **🎛️ LLM Activation Panel**: Instantly enable, disable, or hot-swap models using intuitive UI toggles.
-- **📊 Live Operations Dashboard**: Monitor actual GPU utilization, VRAM allocation, GPU temperature, power draw, CPU/RAM use, process memory, uptime, and model workload.
-- **🔑 Private Internal Authentication**: The model key is loaded server-side from Supabase `app_config`, used only by the local dashboard and eFlow gateway, and never returned to the deployed browser.
-- **🚦 Shared FIFO Queue**: One DeepSeek job runs at a time while additional users receive queue positions instead of model-busy errors.
-- **☁️ Automatic Quick Tunnel Publishing**: Rotating Cloudflare URLs, runtime status, messages, and heartbeats are written directly to Supabase.
-- **🌐 Dashboard Tunnel Control**: View, copy, and intentionally rotate the active Quick Tunnel; the supervisor publishes the replacement to Supabase automatically.
-- **♻️ Clean AI Restart**: `npm run restart` removes stale AI API, dashboard, queue, supervisor, and matching tunnel processes before starting one clean stack.
-- **📝 Live Server Logs**: Real-time terminal-style server logging via SSE (Server-Sent Events) for instant debugging and monitoring.
-- **🎨 eFlow Operations UI**: A light, governance-focused console aligned with the main eFlow visual language, plus a focused dark live-log surface.
+- **Local Model Backend**: The server downloads and runs registered GGUF models directly through `llama-cpp-python` with CUDA acceleration.
+- **Laya Decision Layer**: System-1 bounded governance engine for municipal routing (IT, GSO, CPDO, LEDIPO, BPLO, Budget, HRMO), statutory BAC / cash-advance clearance, urgency classification, and personnel skill matching.
+- **PyGAD Process Optimization**: Multi-objective genetic algorithm solving RCPSP (Resource-Constrained Project Scheduling), workload leveling, and knapsack budget allocation across municipal proposals.
+- **Polygon Blockchain Audit Ledger**: Calldata-only immutable anchoring on Polygon Amoy (Chain ID 80002) providing tamper-proof SHA-256 genesis, milestone, and clearance receipts.
+- **LLM Activation Panel**: Instantly enable, disable, or hot-swap models using intuitive UI toggles.
+- **Live Operations Dashboard**: Monitor actual GPU utilization, VRAM allocation, GPU temperature, power draw, CPU/RAM use, process memory, uptime, and model workload.
+- **Private Internal Authentication**: The model key is loaded server-side from Supabase `app_config`, used only by the local dashboard and eFlow gateway, and never returned to the deployed browser.
+- **Shared FIFO Queue**: One DeepSeek job runs at a time while additional users receive queue positions instead of model-busy errors.
+- **Automatic Quick Tunnel Publishing**: Rotating Cloudflare URLs, runtime status, messages, and heartbeats are written directly to Supabase.
+- **Dashboard Tunnel Control**: View, copy, and intentionally rotate the active Quick Tunnel; the supervisor publishes the replacement to Supabase automatically.
+- **Clean AI Restart**: `npm run restart` removes stale AI API, dashboard, queue, supervisor, and matching tunnel processes before starting one clean stack.
+- **Live Server Logs**: Real-time terminal-style server logging via SSE (Server-Sent Events) for instant debugging and monitoring.
+- **eFlow Operations UI**: A light, governance-focused console aligned with the main eFlow visual language, plus a focused dark live-log surface.
 
 ---
 
-## 🔌 API Guide: How to Use the Models
+## API Guide: How to Use the Models
 
 The local backend acts as an API server on port `8321`. It is fully compatible with standard chat completion formats (like Ollama). All API endpoints are grouped under the `/controlpanelEflow` prefix to ensure secure routing.
 
@@ -165,7 +165,7 @@ Anchors municipal lifecycle events onto the Polygon Amoy Testnet (Chain ID `8000
 
 ---
 
-## 📋 Requirements
+## Requirements
 
 - **Python 3.10+** — [Download Python](https://www.python.org/downloads/)
 - **Node.js 18+** — [Download Node.js](https://nodejs.org/)
@@ -187,11 +187,11 @@ Anchors municipal lifecycle events onto the Polygon Amoy Testnet (Chain ID `8000
 
 ---
 
-## 📥 Manual Model Download
+## Manual Model Download
 
 Models are downloaded automatically on first use, but if you want to pre-download them all manually into the `models/` folder, run the following commands from your project root.
 
-> 📌 Your project root is the folder that contains the `models/` directory, e.g.:
+> Your project root is the folder that contains the `models/` directory, e.g.:
 > `PS C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration>`
 
 First install the HuggingFace CLI if you don't have it:
@@ -236,11 +236,11 @@ models/
 └── nomic-embed-text_latest.gguf
 ```
 
-> ⚠️ Note: After downloading, the files may be named differently from what the backend expects. The backend automatically renames them on first use — or you can manually rename them to match the filenames above.
+> Note: After downloading, the files may be named differently from what the backend expects. The backend automatically renames them on first use — or you can manually rename them to match the filenames above.
 
 ---
 
-## 🛠️ Technology Stack
+## Technology Stack
 
 | Layer | Technologies | Role & Purpose |
 | :--- | :--- | :--- |
@@ -255,9 +255,9 @@ models/
 
 ---
 
-## ⚡ GPU Acceleration Setup (IMPORTANT — Read Before Installing)
+## GPU Acceleration Setup (IMPORTANT — Read Before Installing)
 
-> ⚠️ **This step is critical.** The CUDA Toolkit version you install must match the pre-built `llama-cpp-python` wheel. Using the wrong version will cause the backend to silently fall back to CPU inference, resulting in very slow streaming.
+> **This step is critical.** The CUDA Toolkit version you install must match the pre-built `llama-cpp-python` wheel. Using the wrong version will cause the backend to silently fall back to CPU inference, resulting in very slow streaming.
 
 ### Step 1 — Identify Your GPU and Pick the Right CUDA Version
 
@@ -270,7 +270,7 @@ The CUDA Toolkit version required depends on your GPU generation. Use this table
 | Ampere | RTX 3060, RTX 3070, RTX 3080, RTX 3090 | **12.4 or 12.6** |
 | Ada Lovelace (newer) | RTX 4050, RTX 4060, RTX 4070, RTX 4080, RTX 4090 | **12.6+** |
 
-> 📌 **Developer note**: This project was built and tested on an **NVIDIA GeForce GTX 1070 Max-Q (8GB VRAM, Pascal architecture)** using **CUDA Toolkit 12.4** and the `cu124` pre-built wheel for `llama-cpp-python`. If you have a newer GPU (e.g. RTX 4050 or higher), you may need CUDA Toolkit 12.6 and install the `cu126` wheel instead. Always match your toolkit version to the wheel.
+> **Developer note**: This project was built and tested on an **NVIDIA GeForce GTX 1070 Max-Q (8GB VRAM, Pascal architecture)** using **CUDA Toolkit 12.4** and the `cu124` pre-built wheel for `llama-cpp-python`. If you have a newer GPU (e.g. RTX 4050 or higher), you may need CUDA Toolkit 12.6 and install the `cu126` wheel instead. Always match your toolkit version to the wheel.
 
 ### Step 2 — Check If CUDA Toolkit Is Already Installed
 
@@ -346,13 +346,13 @@ server\.venv\Scripts\python.exe -m pip install llama-cpp-python --upgrade --forc
 server\.venv\Scripts\python.exe -c "from llama_cpp import llama_supports_gpu_offload; print(llama_supports_gpu_offload())"
 ```
 
-✅ If it prints `True` — GPU acceleration is active and all model layers will be offloaded to VRAM.
+If it prints `True` — GPU acceleration is active and all model layers will be offloaded to VRAM.
 
-❌ If it prints `False` — the CPU wheel was installed. Repeat Step 6 and make sure your CUDA PATH is correct.
+If it prints `False` — the CPU wheel was installed. Repeat Step 6 and make sure your CUDA PATH is correct.
 
 ---
 
-## 📦 Setup & Installation
+## Setup & Installation
 
 ### 1. Environment Variables
 
@@ -454,7 +454,7 @@ npm run dev:frontend-only
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 - `src/app/App.tsx` — Main application layout
 - `src/app/components/ControlDashboard.tsx` — Small operations-dashboard composition shell
@@ -488,7 +488,7 @@ npm run dev:frontend-only
 
 ---
 
-## 💡 Architecture & End-to-End System Flow
+## Architecture & End-to-End System Flow
 
 ```mermaid
 flowchart TD
@@ -545,7 +545,7 @@ flowchart TD
     Gateway --> Browser
 ```
 
-### 🏛️ 1. The LAYA Decision Layer (System-1 Governance Engine)
+### 1. The LAYA Decision Layer (System-1 Governance Engine)
 
 In municipal governance, raw LLMs cannot be trusted to unilaterally make statutory determinations. The **Laya Decision Layer** (`server/laya_service.py`) acts as a System-1 bounded governance router:
 
@@ -564,7 +564,7 @@ In municipal governance, raw LLMs cannot be trusted to unilaterally make statuto
 - **Role & Personnel Vector Matching**: Evaluates team members using a 0–100 alignment score based on employee skill tokens, strengths, and title relevance, while strictly applying weakness penalties.
 - **Audit Reasoning Generation**: Produces explainable justifications for administrative accountability.
 
-### 🧬 2. PyGAD Multi-Objective Genetic Algorithm Optimizer
+### 2. PyGAD Multi-Objective Genetic Algorithm Optimizer
 
 The optimization engine (`server/pygad_optimizer.py`) resolves the **Resource-Constrained Project Scheduling Problem (RCPSP)** and workforce allocation using multi-objective genetic algorithms:
 
@@ -576,7 +576,7 @@ The optimization engine (`server/pygad_optimizer.py`) resolves the **Resource-Co
   - `low_risk`: Prioritizes employee burnout thresholds and penalizes known personnel weaknesses (risk 35%, workload 30%).
 - **Knapsack Budget Constraint**: Evaluates budget categories (Capital Outlay, MOOE, Personnel Services) against municipal budget caps.
 
-### ⛓️ 3. Polygon Blockchain Audit Ledger
+### 3. Polygon Blockchain Audit Ledger
 
 To provide non-repudiation and immutable oversight for municipal projects, the server incorporates an on-chain anchoring system (`server/polygon_service.py`):
 
@@ -584,28 +584,28 @@ To provide non-repudiation and immutable oversight for municipal projects, the s
 - **Genesis & Milestone Receipts**: Records `proposal_id`, `event_type` (`genesis`, `bac_clearance`, `cash_advance_release`, `approval`), `document_hash`, `tx_hash`, and `block_number`.
 - **Chain-of-Custody Verification**: Public endpoints allow any auditor or citizen to verify that the local database state matches on-chain calldata without relying on centralized promises.
 
-### 🔒 4. Authentication, Security & Ingress Boundary
+### 4. Authentication, Security & Ingress Boundary
 
 - **Private Loopback Isolation**: Port `8321` binds strictly to `127.0.0.1`. Remote clients never hit this port directly.
 - **JWT Gateway Ingress**: Remote eFlow clients connect via Cloudflare Quick Tunnel to port `8322`. The gateway verifies the user's Supabase JWT before attaching the internal `llm_auth_key` and proxying to port `8321`.
 - **Zero-Touch Dynamic Tunnel Discovery**: `server/tunnel_supervisor.py` spins up `cloudflared`, intercepts the generated `trycloudflare.com` URL, writes it directly into Supabase `system_config`, and emits periodic heartbeats. eFlow clients poll Supabase to discover the current URL automatically.
 - **FIFO Request Serialization**: Only one DeepSeek reasoning job runs at a time in CUDA VRAM. Additional requests receive queue positions (`{"queue_position": N}`) and poll until completion, preventing GPU VRAM out-of-memory crashes.
 
-## 🖥️ VRAM Requirements
+## VRAM Requirements
 
 | Model | VRAM Required | Fits in 8GB? |
 |---|---|---|
-| Phi-3 Mini 3.8B Q4 | ~2.2 GB | ✅ Yes |
-| Qwen 2.5 7B Q4 | ~4.4 GB | ✅ Yes |
-| Llama 3 8B Q4 | ~4.7 GB | ✅ Yes |
-| DeepSeek R1 8B Q4 | ~4.9 GB | ✅ Yes |
-| Gemma 3 12B Q4 | ~7.3 GB | ⚠️ Tight |
+| Phi-3 Mini 3.8B Q4 | ~2.2 GB | Yes |
+| Qwen 2.5 7B Q4 | ~4.4 GB | Yes |
+| Llama 3 8B Q4 | ~4.7 GB | Yes |
+| DeepSeek R1 8B Q4 | ~4.9 GB | Yes |
+| Gemma 3 12B Q4 | ~7.3 GB | Tight |
 
 > Only one model is loaded into VRAM at a time. The system automatically unloads the previous model before loading a new one.
 
 ---
 
-## 🔧 Troubleshooting
+## Troubleshooting
 
 ### `Waiting for eFlow gateway :8322`
 
@@ -633,7 +633,7 @@ A collection of every real issue encountered during development and their exact 
 
 ---
 
-### ❌ `llama_supports_gpu_offload()` returns `False`
+### Issue: `llama_supports_gpu_offload()` returns `False`
 
 **What it means**: `llama-cpp-python` installed the CPU-only version instead of the CUDA version. Your models will run on CPU and streaming will be very slow.
 
@@ -651,7 +651,7 @@ server\.venv\Scripts\python.exe -c "from llama_cpp import llama_supports_gpu_off
 
 ---
 
-### ❌ `Failed to load shared library 'llama.dll'`
+### Issue: `Failed to load shared library 'llama.dll'`
 
 **Full error**:
 ```
@@ -671,7 +671,7 @@ Then close and reopen PowerShell and try again. This persists across restarts �
 
 ---
 
-### ❌ `nvcc` not recognized even though CUDA Toolkit is installed
+### Issue: `nvcc` not recognized even though CUDA Toolkit is installed
 
 **Full error**:
 ```
@@ -690,7 +690,7 @@ nvcc --version
 
 ---
 
-### ❌ `No CUDA toolset found` during build
+### Issue: `No CUDA toolset found` during build
 
 **Full error**:
 ```
@@ -709,7 +709,7 @@ Then retry the install.
 
 ---
 
-### ❌ `Access to the path is denied` when copying CUDA files
+### Issue: `Access to the path is denied` when copying CUDA files
 
 **Full error**:
 ```
@@ -726,7 +726,7 @@ cd "C:\path\to\your\project"
 
 ---
 
-### ❌ Build hangs for 30+ minutes at `Building wheel for llama-cpp-python`
+### Issue: Build hangs for 30+ minutes at `Building wheel for llama-cpp-python`
 
 **What it means**: The CUDA compilation got stuck or the build environment has a conflict.
 
@@ -738,7 +738,7 @@ server\.venv\Scripts\pip.exe install https://github.com/abetlen/llama-cpp-python
 
 ---
 
-### ❌ `server\.venv\Scripts\pip.exe` not recognized / module error
+### Issue: `server\.venv\Scripts\pip.exe` not recognized / module error
 
 **Full error**:
 ```
@@ -755,7 +755,7 @@ server\.venv\Scripts\pip.exe install ...
 
 ---
 
-### ❌ GPU shows 0% usage in Task Manager even after setup
+### Issue: GPU shows 0% usage in Task Manager even after setup
 
 **What it means**: Either the CUDA wheel isn't installed correctly, or `n_gpu_layers` isn't set in the model loading code.
 
@@ -777,7 +777,7 @@ Both need to be true for GPU to actually be used.
 
 ---
 
-### ❌ `pip install` keeps installing CPU version despite `--extra-index-url cu124`
+### Issue: `pip install` keeps installing CPU version despite `--extra-index-url cu124`
 
 **What it means**: pip is resolving to the PyPI CPU wheel instead of the CUDA wheel from the custom index, even with `--prefer-binary`.
 
@@ -791,7 +791,7 @@ This guarantees you get the exact CUDA 12.4 + Python 3.12 + Windows build with n
 
 ---
 
-### ✅ How to confirm everything is working correctly
+### Verification Checklist
 
 Run all three checks in order:
 
@@ -808,4 +808,4 @@ server\.venv\Scripts\python.exe -c "from llama_cpp import llama_supports_gpu_off
 npm run dev
 ```
 
-If all three pass — you're fully set up with GPU acceleration. 🎉
+If all three pass, the environment is fully configured with GPU acceleration.
