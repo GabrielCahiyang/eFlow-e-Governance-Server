@@ -10,28 +10,42 @@ bounded municipal administrative decisions:
 """
 
 import logging
+import os
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger("eflow.laya")
 
 _laya_router = None
-_laya_router_init_tried = False
+_laya_router_last_failure = 0.0
 
 
 def get_laya_router() -> Any | None:
     """Lazily load the Laya Router from NandhaKishorM/laya."""
-    global _laya_router, _laya_router_init_tried
-    if _laya_router_init_tried:
+    global _laya_router, _laya_router_last_failure
+    mode = os.getenv("LAYA_MODE", "model").strip().lower()
+    if mode in {"off", "disabled", "heuristic", "fallback"}:
+        return None
+    if _laya_router is not None:
         return _laya_router
-    _laya_router_init_tried = True
+    retry_seconds = max(0, int(os.getenv("LAYA_RETRY_SECONDS", "60")))
+    if _laya_router_last_failure and time.monotonic() - _laya_router_last_failure < retry_seconds:
+        return None
     try:
         from laya import Router
-        _laya_router = Router(standalone_repos=True, default="typed-decisions")
+        device = os.getenv("LAYA_DEVICE", "cpu").strip() or None
+        _laya_router = Router(
+            standalone_repos=True,
+            default="typed-decisions",
+            max_loaded=1,
+            device=device,
+        )
         logger.info("[Laya] Router successfully initialized with convaiinnovations/laya-typed-decisions")
     except Exception as exc:
         logger.warning(f"[Laya] Could not initialize laya.Router: {exc}. Using fallback heuristic engine.")
+        _laya_router_last_failure = time.monotonic()
         _laya_router = None
     return _laya_router
 
@@ -250,7 +264,7 @@ def classify_with_laya_model(
     }
 
     try:
-        prediction = router.predict(state, questions)
+        prediction = router.predict(state, questions, model="typed-decisions")
         answers = prediction.get("answers", {})
 
         wf_answer = answers.get("workflow", {})
@@ -305,7 +319,7 @@ def classify_workflow_routing(
     # Fallback: municipal keyword scoring
     combined = f"{task_title} {task_desc} {' '.join(skills)} {context}".lower()
 
-    best_domain = MUNICIPAL_DOMAINS[0]
+    best_domain = None
     highest_score = -1
 
     for domain in MUNICIPAL_DOMAINS:
@@ -319,6 +333,15 @@ def classify_workflow_routing(
         if score > highest_score:
             highest_score = score
             best_domain = domain
+
+    if highest_score <= 0 or best_domain is None:
+        return {
+            "department": "Manual classification required",
+            "workflow": "manual_review_required",
+            "confidence": 0.0,
+            "laya_model": False,
+            "requires_manual_review": True,
+        }
 
     # Calibrated confidence metric (0.72 – 0.96)
     if highest_score >= 5:
@@ -335,6 +358,7 @@ def classify_workflow_routing(
         "workflow": best_domain["workflow"],
         "confidence": round(confidence, 2),
         "laya_model": False,
+        "requires_manual_review": False,
     }
 
 
@@ -549,17 +573,33 @@ def enrich_task_with_laya(
     clearance = classify_clearance(title, desc, budget_lines)
 
     # 3. Priority Decision
-    priority = task.get("priority") or classify_priority(title, desc, skills, subtasks)
+    priority = (
+        task.get("priority")
+        or routing.get("priority_hint")
+        or classify_priority(title, desc, skills, subtasks)
+    )
     if priority not in ("high", "medium", "low"):
         priority = "medium"
+
+    if routing.get("requires_bac_hint") and not clearance["requiresBAC"]:
+        clearance = {
+            **clearance,
+            "requiresBAC": True,
+            "requiresCashAdvance": False,
+            "approvalTier": "tier_2_bac_mayoral",
+            "badge": "BAC Resolution Required",
+            "reason": "LAYA classified this task as requiring BAC and Mayoral review.",
+            "confidence": max(float(clearance["confidence"]), float(routing["confidence"])),
+        }
 
     # 4. Personnel Decision (with global workload balancing)
     assigned_ids, staff_reason = match_personnel(skills, title, desc, employees, lead_history=lead_history)
 
     # 5. Build Rich Audit Reasoning
     confidence_pct = int(routing["confidence"] * 100)
+    engine = "laya" if routing.get("laya_model") else "heuristic_fallback"
     audit_reason = (
-        f"[Laya Decision · {confidence_pct}% conf · {routing['department']} · {clearance['badge']}] "
+        f"[LAYA Decision · {confidence_pct}% conf · {routing['department']} · {clearance['badge']}] "
         f"{staff_reason} {clearance['reason']}"
     )
 
@@ -576,6 +616,13 @@ def enrich_task_with_laya(
         "priority": priority,
         "recommendedEmployeeIds": assigned_ids,
         "recommendationReasoning": audit_reason,
+        "recommendationSource": "laya",
+        "routingDecision": routing,
+        "clearanceDecision": clearance,
+        "decisionLayer": {
+            "engine": engine,
+            "requiresManualReview": bool(routing.get("requires_manual_review")),
+        },
         "budgetDecision": budget_decision,
         "budgetNoCostReason": task.get("budgetNoCostReason") or "",
         "budgetLines": task.get("budgetLines") or [],

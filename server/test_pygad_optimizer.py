@@ -178,9 +178,10 @@ class TestOptimizationRun(unittest.TestCase):
         )
         for task in result["tasks"]:
             self.assertIn("recommendedEmployeeIds", task)
-            self.assertEqual(len(task["recommendedEmployeeIds"]), 1)
+            self.assertGreaterEqual(len(task["recommendedEmployeeIds"]), 1)
             self.assertIn("teamComposition", task)
             self.assertIn("optimizationMetadata", task)
+            self.assertEqual(task["recommendationSource"], "pygad")
 
     def test_fitness_bounded(self):
         result = run_proposal_optimization(
@@ -212,6 +213,20 @@ class TestOptimizationRun(unittest.TestCase):
         )
         # Result should still produce valid tasks regardless of cap
         self.assertEqual(len(result["tasks"]), 3)
+
+    def test_source_budget_amounts_are_not_rewritten(self):
+        result = run_proposal_optimization(
+            tasks=SAMPLE_TASKS,
+            employees=SAMPLE_EMPLOYEES,
+            profile="balanced",
+            num_generations=10,
+        )
+        self.assertEqual(result["tasks"][0]["budgetLines"][0]["amount"], 25000.0)
+        self.assertEqual(result["tasks"][1]["budgetLines"][0]["amount"], 10000.0)
+        self.assertTrue(all(
+            task["optimizationMetadata"]["budgetMultiplier"] == 1.0
+            for task in result["tasks"]
+        ))
 
     def test_generation_history_length(self):
         result = run_proposal_optimization(

@@ -15,8 +15,8 @@ import os
 import unittest
 import time
 
-# Ensure .env is NOT required for tests (simulation mode)
-os.environ.setdefault("POLYGON_PRIVATE_KEY", "")
+# Explicit simulation must win even if a developer has a wallet in .env.
+os.environ["POLYGON_MODE"] = "simulation"
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -109,6 +109,11 @@ class TestAnchorGenesis(unittest.TestCase):
         after = time.time()
         self.assertGreaterEqual(receipt.anchored_at, before)
         self.assertLessEqual(receipt.anchored_at, after)
+
+    def test_explicit_simulation_ignores_configured_wallet(self):
+        ledger = get_ledger(simulation=True)
+        receipt = ledger.anchor_genesis(SAMPLE_PROPOSAL)
+        self.assertTrue(receipt.tx_hash.startswith("SIMULATION:"))
 
 
 class TestAnchorMilestone(unittest.TestCase):

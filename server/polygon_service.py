@@ -13,6 +13,7 @@ Environment variables required in .env:
   POLYGON_PRIVATE_KEY  — hex private key (with or without 0x prefix)
   POLYGON_RPC_URL      — default: https://rpc-amoy.polygon.technology
   POLYGON_CHAIN_ID     — default: 80002
+  POLYGON_MODE         — auto (default), live, or simulation
 """
 
 import hashlib
@@ -35,6 +36,25 @@ POLYGON_RPC_URL: str = os.getenv(
 )
 POLYGON_CHAIN_ID: int = int(os.getenv("POLYGON_CHAIN_ID", "80002"))
 POLYGON_PRIVATE_KEY: str = os.getenv("POLYGON_PRIVATE_KEY", "")
+POLYGON_MODE: str = os.getenv("POLYGON_MODE", "auto").strip().lower()
+
+_SIMULATION_MODES = {"simulation", "simulate", "mock", "offline", "test"}
+_LIVE_MODES = {"live", "amoy", "onchain", "on-chain"}
+
+
+def _resolve_simulation_mode(explicit: Optional[bool] = None) -> bool:
+    """Resolve mock/live behavior without silently downgrading an explicit live run."""
+    if explicit is not None:
+        return explicit
+    if POLYGON_MODE in _SIMULATION_MODES:
+        return True
+    if POLYGON_MODE in _LIVE_MODES:
+        return False
+    if POLYGON_MODE not in {"", "auto"}:
+        raise ValueError(
+            "POLYGON_MODE must be one of: auto, live, or simulation."
+        )
+    return not POLYGON_PRIVATE_KEY.strip()
 
 
 @dataclass
@@ -64,16 +84,20 @@ def _get_web3():
     return w3
 
 
-def _send_anchor_tx(document_hash: str) -> Dict[str, Any]:
+def _send_anchor_tx(
+    document_hash: str,
+    *,
+    simulation: Optional[bool] = None,
+) -> Dict[str, Any]:
     """
     Send a 0-MATIC calldata transaction to Polygon anchoring the document hash.
     Returns dict with tx_hash, block_number, and simulation flag.
     """
+    simulation_enabled = _resolve_simulation_mode(simulation)
     private_key = POLYGON_PRIVATE_KEY.strip()
-    if not private_key:
+    if simulation_enabled:
         logger.warning(
-            "[Polygon] POLYGON_PRIVATE_KEY not set — running in simulation mode. "
-            "Set POLYGON_PRIVATE_KEY in .env to enable live anchoring."
+            "[Polygon] Running in simulation mode - no transaction will be sent."
         )
         sim_tx = f"SIMULATION:{document_hash[:16]}{int(time.time())}"
         return {
@@ -81,6 +105,11 @@ def _send_anchor_tx(document_hash: str) -> Dict[str, Any]:
             "block_number": None,
             "simulated": True,
         }
+
+    if not private_key:
+        raise RuntimeError(
+            "POLYGON_MODE is live but POLYGON_PRIVATE_KEY is not configured."
+        )
 
     if not private_key.startswith("0x"):
         private_key = f"0x{private_key}"
@@ -113,7 +142,9 @@ def _send_anchor_tx(document_hash: str) -> Dict[str, Any]:
 
         signed = w3.eth.account.sign_transaction(tx, private_key=private_key)
         tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
-        tx_hash_hex = f"0x{tx_hash.hex()}"
+        tx_hash_hex = tx_hash.hex()
+        if not tx_hash_hex.startswith("0x"):
+            tx_hash_hex = f"0x{tx_hash_hex}"
 
         # Wait for one confirmation (max 30s)
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
@@ -137,12 +168,15 @@ def _send_anchor_tx(document_hash: str) -> Dict[str, Any]:
 
 def _make_explorer_url(tx_hash: str, simulated: bool) -> str:
     if simulated:
-        return f"https://amoy.polygonscan.com  (simulation — no live tx)"
+        return "https://amoy.polygonscan.com (simulation - no live tx)"
     return f"https://amoy.polygonscan.com/tx/{tx_hash}"
 
 
 class PolygonGovernanceLedger:
     """Immutable event ledger for eFlow proposal lifecycle on Polygon Amoy."""
+
+    def __init__(self, simulation: Optional[bool] = None):
+        self.simulation = _resolve_simulation_mode(simulation)
 
     # ── Genesis: anchor the complete proposal at publication time ─────────
 
@@ -161,7 +195,7 @@ class PolygonGovernanceLedger:
             "anchored_at": time.time(),
         }
         doc_hash = _sha256_hex(payload)
-        result = _send_anchor_tx(doc_hash)
+        result = _send_anchor_tx(doc_hash, simulation=self.simulation)
 
         receipt = AnchorReceipt(
             proposal_id=proposal_id,
@@ -199,7 +233,7 @@ class PolygonGovernanceLedger:
             "anchored_at": time.time(),
         }
         doc_hash = _sha256_hex(payload)
-        result = _send_anchor_tx(doc_hash)
+        result = _send_anchor_tx(doc_hash, simulation=self.simulation)
 
         receipt = AnchorReceipt(
             proposal_id=proposal_id,
@@ -241,7 +275,7 @@ class PolygonGovernanceLedger:
             "sealed_at": time.time(),
         }
         doc_hash = _sha256_hex(payload)
-        result = _send_anchor_tx(doc_hash)
+        result = _send_anchor_tx(doc_hash, simulation=self.simulation)
 
         receipt = AnchorReceipt(
             proposal_id=proposal_id,
@@ -263,8 +297,7 @@ class PolygonGovernanceLedger:
         Verify that a document_hash appears in the calldata of the given tx_hash.
         Returns verification status and block details.
         """
-        private_key = POLYGON_PRIVATE_KEY.strip()
-        if not private_key:
+        if self.simulation:
             # Simulation mode: verify deterministically from hash prefix
             is_sim = tx_hash.startswith("SIMULATION:")
             expected_prefix = f"SIMULATION:{document_hash[:16]}"
@@ -275,7 +308,7 @@ class PolygonGovernanceLedger:
                 "tx_hash": tx_hash,
                 "block_number": None,
                 "simulated": True,
-                "message": "Simulation mode (POLYGON_PRIVATE_KEY not set)",
+                "message": "Simulation mode (no on-chain transaction)",
             }
 
         try:
@@ -351,11 +384,19 @@ class PolygonGovernanceLedger:
 
 
 # Module-level singleton
-_ledger: Optional[PolygonGovernanceLedger] = None
+_ledgers: Dict[bool, PolygonGovernanceLedger] = {}
 
 
-def get_ledger() -> PolygonGovernanceLedger:
-    global _ledger
-    if _ledger is None:
-        _ledger = PolygonGovernanceLedger()
-    return _ledger
+def get_ledger(*, simulation: Optional[bool] = None) -> PolygonGovernanceLedger:
+    """Return the shared ledger for the requested mode.
+
+    Pass ``simulation=True`` for local demos and tests even when a wallet key
+    exists in .env. Production callers can keep using ``get_ledger()`` and set
+    POLYGON_MODE=live.
+    """
+    resolved_mode = _resolve_simulation_mode(simulation)
+    if resolved_mode not in _ledgers:
+        _ledgers[resolved_mode] = PolygonGovernanceLedger(
+            simulation=resolved_mode,
+        )
+    return _ledgers[resolved_mode]

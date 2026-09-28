@@ -584,6 +584,8 @@ To provide non-repudiation and immutable oversight for municipal projects, the s
 - **Genesis & Milestone Receipts**: Records `proposal_id`, `event_type` (`genesis`, `bac_clearance`, `cash_advance_release`, `approval`), `document_hash`, `tx_hash`, and `block_number`.
 - **Chain-of-Custody Verification**: Public endpoints allow any auditor or citizen to verify that the local database state matches on-chain calldata without relying on centralized promises.
 
+For an offline demo or mock run, set `POLYGON_MODE=simulation` or construct the ledger with `get_ledger(simulation=True)`. Simulation mode takes priority over a private key already present in `.env` and never contacts Polygon. Use `POLYGON_MODE=live` for Amoy; live mode requires `POLYGON_PRIVATE_KEY` and fails if the RPC cannot be reached.
+
 ### 4. Authentication, Security & Ingress Boundary
 
 - **Private Loopback Isolation**: Port `8321` binds strictly to `127.0.0.1`. Remote clients never hit this port directly.

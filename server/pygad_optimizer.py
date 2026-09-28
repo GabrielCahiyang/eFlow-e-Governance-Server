@@ -296,9 +296,11 @@ class ProposalOptimizer:
         # Scheduling priority: 1 .. 100
         for _ in range(N):
             gene_space.append(list(range(1, 101)))
-        # Budget modifier percentage: 80 .. 120
+        # Source proposal budgets are immutable during decomposition. Keep the
+        # budget gene at 100 so PyGAD evaluates compliance without rewriting
+        # figures extracted from the approved source document.
         for _ in range(N):
-            gene_space.append(list(range(80, 121)))
+            gene_space.append([100])
 
         generation_history: List[float] = []
 
@@ -354,15 +356,38 @@ class ProposalOptimizer:
             emp_available_day[emp_idx] = end_day
             emp_workload_tally[emp_idx] += self.estimated_hours[i]
 
-            # Assign lead employee
-            orig_task["recommendedEmployeeIds"] = [emp_id]
-            
-            # Select 1-2 complementary support employees with lowest current workload
+            # Keep valid LAYA support recommendations first, then fill any
+            # remaining support slots using skill fit and projected workload.
+            existing_ids = [
+                str(item) for item in orig_task.get("recommendedEmployeeIds", [])
+                if str(item) != emp_id
+            ]
+            valid_employee_ids = {
+                str(employee.get("id")) for employee in self.employees
+            }
             support_candidates = [
-                str(self.employees[k].get("id"))
-                for k in sorted(range(M), key=lambda k: emp_workload_tally[k])
-                if k != emp_idx
-            ][:2]
+                item for item in existing_ids if item in valid_employee_ids
+            ]
+            ranked_support = sorted(
+                (k for k in range(M) if k != emp_idx),
+                key=lambda k: (
+                    -_calculate_skill_overlap(
+                        orig_task.get("requiredSkills") or [],
+                        orig_task.get("title", ""),
+                        self.employees[k].get("skills", []),
+                        self.employees[k].get("strengths", []),
+                    ),
+                    emp_workload_tally[k],
+                ),
+            )
+            for candidate_idx in ranked_support:
+                candidate_id = str(self.employees[candidate_idx].get("id"))
+                if candidate_id not in support_candidates:
+                    support_candidates.append(candidate_id)
+                if len(support_candidates) >= 2:
+                    break
+            support_candidates = support_candidates[:2]
+            orig_task["recommendedEmployeeIds"] = [emp_id, *support_candidates]
 
             # Construct structured team composition compatible with EflowWeb schema
             orig_task["teamComposition"] = {
@@ -401,20 +426,21 @@ class ProposalOptimizer:
                 "scheduledStartDay": start_day,
                 "scheduledEndDay": end_day,
                 "durationDays": self.durations[i],
-                "budgetMultiplier": round(budget_factors[i], 3),
+                "budgetMultiplier": 1.0,
                 "profile": self.profile.name,
+                "pipelineStages": ["deepseek-r1:8b", "laya", "pygad"],
             }
 
-            # Scale budget lines if present
-            if orig_task.get("budgetLines"):
-                new_lines = []
-                for bl in orig_task["budgetLines"]:
-                    updated_bl = dict(bl)
-                    updated_bl["amount"] = round(float(bl.get("amount", 0)) * budget_factors[i], 2)
-                    new_lines.append(updated_bl)
-                orig_task["budgetLines"] = new_lines
-
-            orig_task["recommendationSource"] = "llm"
+            laya_reason = str(orig_task.get("recommendationReasoning") or "").strip()
+            pygad_reason = (
+                f"PyGAD selected {emp_name} as lead using the {self.profile.name} "
+                f"profile at fitness {round(best_fit, 1)} and scheduled this task "
+                f"for day {start_day} through day {end_day}."
+            )
+            orig_task["recommendationReasoning"] = " ".join(
+                item for item in [laya_reason, pygad_reason] if item
+            )
+            orig_task["recommendationSource"] = "pygad"
             orig_task["burnoutWarning"] = bool(emp_workload_tally[emp_idx] > 55)
 
             optimized_tasks.append(orig_task)

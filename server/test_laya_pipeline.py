@@ -1,6 +1,11 @@
-"""Unit tests for laya_service and proposal_pipeline."""
+"""Unit tests for laya_service and the complete proposal pipeline."""
 
+import json
+import os
 import unittest
+
+os.environ["LAYA_MODE"] = "heuristic"
+
 from laya_service import (
     classify_clearance,
     classify_priority,
@@ -15,6 +20,7 @@ from proposal_pipeline import (
     extract_json_payload,
     is_proposal_decomposition_prompt,
     parse_section_prompt,
+    execute_proposal_pipeline,
 )
 
 
@@ -123,7 +129,19 @@ class TestLayaPipeline(unittest.TestCase):
         self.assertIn("priority", enriched)
         self.assertIn("recommendedEmployeeIds", enriched)
         self.assertIn("recommendationReasoning", enriched)
-        self.assertIn("[Laya Decision", enriched["recommendationReasoning"])
+        self.assertIn("[LAYA Decision", enriched["recommendationReasoning"])
+        self.assertIn("routingDecision", enriched)
+        self.assertIn("clearanceDecision", enriched)
+
+    def test_unmatched_task_requires_manual_routing(self):
+        routing = classify_workflow_routing(
+            "Arrange ordinary items",
+            "Complete miscellaneous work.",
+            [],
+        )
+        self.assertEqual(routing["workflow"], "manual_review_required")
+        self.assertTrue(routing["requires_manual_review"])
+        self.assertEqual(routing["confidence"], 0.0)
 
     def test_is_proposal_decomposition_prompt(self):
         messages = [
@@ -142,6 +160,75 @@ class TestLayaPipeline(unittest.TestCase):
         payload = extract_json_payload(raw)
         self.assertIsNotNone(payload)
         self.assertEqual(payload["tasks"][0]["title"], "Test")
+
+    def test_full_pipeline_runs_deepseek_then_laya_then_pygad(self):
+        class FakeDeepSeek:
+            def create_chat_completion(self, messages):
+                self.messages = messages
+                return {
+                    "choices": [{"message": {"content": json.dumps({
+                        "tasks": [{
+                            "title": "Prepare investment diagnostic",
+                            "description": "Analyze local investment data and prepare findings.",
+                            "estimatedDuration": "4 days",
+                            "requiredSkills": ["Economic Research", "Data Analysis"],
+                            "budgetDecision": "missing",
+                            "budgetLines": [],
+                            "subtasks": ["Collect data", "Analyze trends", "Write findings"],
+                        }],
+                    })}}],
+                    "usage": {"completion_tokens": 25},
+                }
+
+        messages = [{"role": "user", "content": '''
+Break down ONE section of a government project proposal into actionable tasks.
+Section title: "Economic Diagnostic"
+Details: "Analyze the local investment landscape and prepare findings."
+Schedule: "Month 2"
+Available team:
+- ID: emp-1 | Name: Juan Dela Cruz | Role: Planning Officer
+  Workload: 20% | Skills: Economic Research, Data Analysis
+  Strengths: Statistical analysis, Report writing
+  Weakness/risk constraints: None recorded
+  Tags: Planning, Research
+- ID: emp-2 | Name: Maria Santos | Role: Investment Officer
+  Workload: 10% | Skills: Investment Promotion, Stakeholder Engagement
+  Strengths: Investor relations
+  Weakness/risk constraints: None recorded
+  Tags: LEDIPO
+Assignment rules:
+Funding rules:
+Proposal budget schedule:
+No reliable budget schedule was extracted.
+Respond with JSON only.
+Produce 1-4 tasks for this section only
+'''}]
+
+        response = execute_proposal_pipeline(FakeDeepSeek(), messages, "deepseek-r1:8b")
+        payload = json.loads(response["message"]["content"])
+        self.assertEqual(payload["pipeline"]["stages"], ["deepseek-r1:8b", "laya", "pygad"])
+        self.assertEqual(payload["pipeline"]["pygad"], "optimized")
+        self.assertEqual(payload["tasks"][0]["recommendationSource"], "pygad")
+        self.assertIn("routingDecision", payload["tasks"][0])
+        self.assertIn("optimizationMetadata", payload["tasks"][0])
+
+    def test_pipeline_does_not_fabricate_tasks_on_invalid_llm_output(self):
+        class EmptyDeepSeek:
+            def create_chat_completion(self, messages):
+                return {"choices": [{"message": {"content": "not json"}}]}
+
+        messages = [{"role": "user", "content": '''
+Break down ONE section of a government project proposal into actionable tasks.
+Section title: "Part 1"
+Details: "Valid section details"
+Schedule: "Month 1"
+Available team:
+Assignment rules:
+Respond with JSON only.
+Produce 1-4 tasks for this section only
+'''}]
+        with self.assertRaisesRegex(RuntimeError, "did not return valid proposal tasks"):
+            execute_proposal_pipeline(EmptyDeepSeek(), messages, "deepseek-r1:8b")
 
 
 if __name__ == "__main__":
