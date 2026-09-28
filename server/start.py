@@ -40,8 +40,9 @@ SERVER_DIR = Path(__file__).parent.resolve()
 VENV_DIR = SERVER_DIR / ".venv"
 REQUIREMENTS = SERVER_DIR / "requirements.txt"
 
-# The launcher also needs the host settings that the child services read.
-load_dotenv(SERVER_DIR.parent / ".env")
+# The launcher and its child services use this local project configuration.
+# Override empty values inherited from a frontend or restart shell.
+load_dotenv(SERVER_DIR.parent / ".env", override=True)
 
 IS_WINDOWS = platform.system() == "Windows"
 PYTHON_BIN = VENV_DIR / ("Scripts" if IS_WINDOWS else "bin") / ("python.exe" if IS_WINDOWS else "python")

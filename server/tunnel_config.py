@@ -7,7 +7,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+# The tunnel shares the local backend configuration.  Use the file values when
+# the parent PowerShell session carries empty environment variables.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
 
 
 def _required_env(*names: str) -> str:
@@ -28,6 +30,7 @@ class TunnelSettings:
     public_api_suffix: str
     cloudflared_path: str | None
     retry_seconds: float
+    public_ready_timeout_seconds: float
     health_interval_seconds: float
     failure_threshold: int
 
@@ -55,6 +58,10 @@ def load_tunnel_settings() -> TunnelSettings:
         ),
         cloudflared_path=os.getenv("CLOUDFLARED_PATH") or None,
         retry_seconds=max(1.0, float(os.getenv("EFLOW_TUNNEL_RETRY_SECONDS", "5"))),
+        public_ready_timeout_seconds=max(
+            30.0,
+            float(os.getenv("EFLOW_TUNNEL_PUBLIC_READY_TIMEOUT_SECONDS", "90")),
+        ),
         health_interval_seconds=max(
             5.0,
             float(os.getenv("EFLOW_TUNNEL_HEALTH_INTERVAL_SECONDS", "5")),

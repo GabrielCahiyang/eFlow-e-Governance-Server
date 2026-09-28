@@ -73,7 +73,10 @@ from server_logging import (
 )
 
 # ── Load environment variables ────────────────────────────────────────
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+# This is a local, file-backed host.  A parent shell can carry empty VITE_
+# variables (for example after a frontend restart); let the project .env file
+# provide the backend credentials in that case.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
 
 SUPABASE_URL: str = os.getenv("VITE_SUPABASE_URL", "")
 SUPABASE_SERVICE_ROLE_KEY: str = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")

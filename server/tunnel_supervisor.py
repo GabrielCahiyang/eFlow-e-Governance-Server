@@ -1,11 +1,13 @@
 """Continuously publish and repair the eFlow Cloudflare Quick Tunnel."""
 
+import json
 import signal
 import sys
 import threading
 import time
+from urllib.parse import urlencode, urlparse
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from tunnel_config import load_tunnel_settings
 from tunnel_process import QuickTunnelProcess, find_cloudflared
@@ -30,6 +32,27 @@ def _is_healthy(url: str, timeout_seconds: float = 3.0) -> bool:
         with urlopen(url, timeout=timeout_seconds) as response:
             return response.status == 200
     except (URLError, OSError):
+        return False
+
+
+def _public_dns_ready(tunnel_origin: str, timeout_seconds: float = 5.0) -> bool:
+    """Check Cloudflare DNS without negatively caching a new hostname locally."""
+    hostname = urlparse(tunnel_origin).hostname
+    if not hostname or not hostname.endswith(".trycloudflare.com"):
+        return False
+    request = Request(
+        "https://cloudflare-dns.com/dns-query?"
+        + urlencode({"name": hostname, "type": "A"}),
+        headers={
+            "Accept": "application/dns-json",
+            "User-Agent": "eFlow-Tunnel-Supervisor/1.0",
+        },
+    )
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        return payload.get("Status") == 0 and bool(payload.get("Answer"))
+    except (ValueError, TypeError, json.JSONDecodeError, URLError, OSError):
         return False
 
 
@@ -78,6 +101,9 @@ class TunnelSupervisor:
                         f"{tunnel_origin}{self._settings.public_api_suffix}"
                     )
                     self._tunnel.wait_until_connected()
+                    self._wait_for_public_endpoint(tunnel_origin)
+                    if self._shutdown.is_set():
+                        break
                     ai_ready = _is_healthy(self._settings.ai_health_url)
                     self._publish_with_retry(
                         "online" if ai_ready else "restarting",
@@ -140,6 +166,39 @@ class TunnelSupervisor:
                 last_reported_at = now
             self._shutdown.wait(self._settings.retry_seconds)
 
+    def _wait_for_public_endpoint(self, tunnel_origin: str) -> None:
+        """Publish only after public DNS and the remote gateway are both ready."""
+        public_health_url = (
+            f"{tunnel_origin}{self._settings.public_api_suffix}/health"
+        )
+        deadline = time.monotonic() + self._settings.public_ready_timeout_seconds
+        waiting_reported = False
+        while not self._shutdown.is_set() and time.monotonic() < deadline:
+            if not self._tunnel or self._tunnel.return_code is not None:
+                raise RuntimeError("cloudflared stopped before its endpoint became public")
+            # Do not ask the Windows/router resolver for this brand-new hostname
+            # until authoritative Cloudflare DNS has it. An early NXDOMAIN can be
+            # cached by the LAN and then break every laptop using that resolver.
+            if _public_dns_ready(tunnel_origin):
+                if _is_healthy(public_health_url, timeout_seconds=8.0):
+                    print(
+                        "[READY] Quick Tunnel DNS and public health check passed.",
+                        flush=True,
+                    )
+                    return
+            if not waiting_reported:
+                print(
+                    "[WAIT] Waiting for Quick Tunnel DNS and public health before publication.",
+                    flush=True,
+                )
+                waiting_reported = True
+            self._shutdown.wait(self._settings.retry_seconds)
+        if self._shutdown.is_set():
+            return
+        raise RuntimeError(
+            "Quick Tunnel did not become publicly reachable before the readiness timeout"
+        )
+
     def _monitor_tunnel(self, tunnel_origin: str) -> None:
         failures = 0
         last_ai_ready: bool | None = None
@@ -173,13 +232,9 @@ class TunnelSupervisor:
                 last_ai_ready = ai_ready
             public_healthy = _is_healthy(public_health_url, timeout_seconds=8.0)
             failures = 0 if public_healthy else failures + 1
-            if failures == self._settings.failure_threshold:
-                print(
-                    "[WARN] The local public-URL self-check cannot resolve the "
-                    "Quick Tunnel. Cloudflare remains connected; clients will "
-                    "continue using the published endpoint.",
-                    file=sys.stderr,
-                    flush=True,
+            if failures >= self._settings.failure_threshold:
+                raise RuntimeError(
+                    "Published Quick Tunnel failed its public health check; rotating it"
                 )
             try:
                 self._publisher.heartbeat(self._public_endpoint)
