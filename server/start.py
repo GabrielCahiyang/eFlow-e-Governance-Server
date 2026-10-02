@@ -10,8 +10,8 @@ This script:
 1. Creates a Python virtual environment (server/.venv) if it doesn't exist
 2. Installs requirements.txt into the venv
 3. Supervises the private FastAPI server on port 8321
-4. Starts an embedded, JWT-protected AI gateway on port 8322 when a full
-   eFlow gateway is not already running there
+4. Starts an embedded, JWT-protected AI gateway when this process owns the
+   configured gateway port
 5. Supervises the automatic Cloudflare/Supabase endpoint publisher
 """
 
@@ -216,8 +216,8 @@ def supervise_services() -> int:
             str(SERVER_DIR / "public_gateway.py"),
         ]
         print(
-            "[START] Starting the embedded JWT-protected AI gateway on "
-            "127.0.0.1:8322",
+            "[START] Starting the embedded JWT-protected AI gateway at "
+            f"{os.getenv('EFLOW_GATEWAY_ORIGIN', 'http://127.0.0.1:8322')}",
             flush=True,
         )
     commands["tunnel supervisor"] = [

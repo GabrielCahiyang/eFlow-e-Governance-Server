@@ -67,6 +67,13 @@ class ChatRequest(BaseModel):
     request_id: str | None = Field(default=None, min_length=1, max_length=100)
 
 
+class ProposalValidationRequest(BaseModel):
+    """The small, text-only payload accepted before proposal decomposition."""
+
+    document_text: str = Field(min_length=1, max_length=500_000)
+    file_name: str = Field(default="", max_length=255)
+
+
 class InternalAiKeyCache:
     """Server-only cache for the key shared with the private model API."""
 
@@ -277,6 +284,21 @@ async def proxy_chat(payload: ChatRequest, request: Request) -> Response:
         request,
         payload=payload.model_dump(),
         timeout_seconds=AI_TIMEOUT_SECONDS,
+    )
+
+
+@app.post("/controlpanelEflow/api/proposals/validate")
+async def validate_proposal(
+    payload: ProposalValidationRequest,
+    request: Request,
+) -> Response:
+    """Validate an imported document through the private proposal API."""
+
+    return await _proxy_ai_request(
+        "POST",
+        "proposals/validate",
+        request,
+        payload=payload.model_dump(),
     )
 
 

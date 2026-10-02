@@ -1,10 +1,49 @@
 import asyncio
 import unittest
 
-from job_queue import AiJobQueue
+from job_queue import AiJobQueue, report_job_progress
 
 
 class AiJobQueueTests(unittest.IsolatedAsyncioTestCase):
+    async def test_thread_progress_is_scoped_to_the_owner_and_result_is_unchanged(self):
+        async def processor(payload):
+            await asyncio.to_thread(report_job_progress, "breaking_down", "Breaking this section into tasks.")
+            await asyncio.sleep(0)
+            report_job_progress("assigning_team", "Suggesting team assignments.")
+            return {"message": {"content": "original response"}}
+
+        queue = AiJobQueue(processor)
+        await queue.start()
+        job = await queue.submit("owner", {"private_input": "must stay private"})
+        await queue.stop()
+        await asyncio.sleep(0)
+        result = await queue.snapshot(job["job_id"], "owner")
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["result"], {"message": {"content": "original response"}})
+        self.assertEqual([step["stage"] for step in result["progress"]["history"]], ["breaking_down", "assigning_team"])
+        self.assertNotIn("private_input", str(result))
+        self.assertIsNone(await queue.snapshot(job["job_id"], "another-owner"))
+
+    async def test_failed_job_releases_the_queue_and_does_not_leak_progress(self):
+        async def processor(payload):
+            if payload["fail"]:
+                report_job_progress("checking_structure", "Checking the task structure.")
+                await asyncio.sleep(0)
+                raise ValueError("Could not prepare the plan")
+            return {"content": "next job"}
+
+        queue = AiJobQueue(processor)
+        await queue.start()
+        first = await queue.submit("owner", {"fail": True})
+        second = await queue.submit("owner", {"fail": False})
+        await queue.stop()
+        failed = await queue.snapshot(first["job_id"], "owner")
+        following = await queue.snapshot(second["job_id"], "owner")
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["error"], "Could not prepare the plan")
+        self.assertEqual(following["status"], "completed")
+        self.assertIsNone(following["progress"])
+
     async def test_jobs_run_in_fifo_order_and_report_position(self):
         first_started = asyncio.Event()
         release_first = asyncio.Event()

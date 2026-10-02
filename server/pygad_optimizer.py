@@ -12,6 +12,7 @@ Profiles supported:
 
 import logging
 import math
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -19,6 +20,26 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 logger = logging.getLogger("eflow.pygad")
+
+
+def _as_number(value: Any, default: float = 0.0) -> float:
+    """Parse model-produced numeric values, including Philippine-formatted money."""
+    if value is None or isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        number = float(value)
+        return number if math.isfinite(number) else default
+
+    normalized = str(value).strip().replace(",", "")
+    # DeepSeek may emit values such as "PHP 105,000.00" or "₱105,000.00".
+    normalized = re.sub(r"[^0-9.\-]", "", normalized)
+    if not normalized or normalized in {"-", ".", "-."}:
+        return default
+    try:
+        number = float(normalized)
+    except ValueError:
+        return default
+    return number if math.isfinite(number) else default
 
 
 @dataclass
@@ -143,7 +164,7 @@ class ProposalOptimizer:
             
             # Hours
             hrs = t.get("estimated_hours") or (dur * 8)
-            self.estimated_hours.append(float(hrs))
+            self.estimated_hours.append(_as_number(hrs, float(dur * 8)))
             
             # Dependencies: parent_index or dependencies list
             deps = t.get("dependencies") or []
@@ -155,7 +176,11 @@ class ProposalOptimizer:
             
             # Budget
             blines = t.get("budgetLines") or []
-            b_amt = sum(float(b.get("amount", 0)) for b in blines) if blines else float(t.get("budget", 0) or 0)
+            b_amt = (
+                sum(_as_number(b.get("amount")) for b in blines)
+                if blines
+                else _as_number(t.get("budget"))
+            )
             self.base_budgets.append(b_amt)
 
     def _fitness_function(self, ga_instance: Any, solution: np.ndarray, solution_idx: int) -> float:
@@ -189,7 +214,7 @@ class ProposalOptimizer:
         mean_skill = float(np.mean(skill_scores)) if skill_scores else 50.0
 
         # 2. Workload Variance (Lower is better)
-        emp_hours = [float(emp.get("workload", 0)) for emp in self.employees]
+        emp_hours = [_as_number(emp.get("workload")) for emp in self.employees]
         for i in range(N):
             emp_idx = emp_assignments[i]
             emp_hours[emp_idx] += self.estimated_hours[i]
@@ -336,7 +361,7 @@ class ProposalOptimizer:
         task_end_days = [0] * N
         task_start_days = [0] * N
         emp_available_day = [0] * M
-        emp_workload_tally = [float(emp.get("workload", 0)) for emp in self.employees]
+        emp_workload_tally = [_as_number(emp.get("workload")) for emp in self.employees]
 
         optimized_tasks = []
         for i in range(N):

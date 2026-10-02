@@ -49,7 +49,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from job_queue import AiJobQueue
+from job_queue import AiJobQueue, report_job_progress
 from system_metrics import read_system_metrics
 from tunnel_control import request_tunnel_rotation, read_tunnel_state
 
@@ -710,6 +710,7 @@ def _execute_queued_chat(body: dict) -> dict:
     if model_tag in disabled_models:
         raise PermissionError(f"Model {model_tag} is currently disabled")
 
+    report_job_progress("loading_model", "Preparing the AI.")
     manager.load(entry)
     llm = manager.llm
     if llm is None:

@@ -2,7 +2,8 @@
 
 import asyncio
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from contextvars import ContextVar
 import time
 from typing import Any, Awaitable, Callable, Literal
 from uuid import uuid4
@@ -10,6 +11,16 @@ from uuid import uuid4
 
 JobStatus = Literal["queued", "processing", "completed", "failed"]
 JobProcessor = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+
+_progress_reporter: ContextVar[Callable[[dict[str, Any]], None] | None] = ContextVar("eflow_job_progress", default=None)
+
+
+def report_job_progress(stage: str, message: str, current: int | None = None, total: int | None = None) -> None:
+    """Internal worker progress; no credentials, prompts, or model reasoning."""
+    reporter = _progress_reporter.get()
+    if reporter:
+        reporter({"stage": stage, "message": message, "current": current, "total": total, "updated_at": time.time()})
+
 
 
 @dataclass
@@ -24,6 +35,8 @@ class AiJob:
     completed_at: float | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+    progress: dict[str, Any] | None = None
+    progress_history: list[dict[str, Any]] = field(default_factory=list)
 
 
 class AiJobQueue:
@@ -148,6 +161,10 @@ class AiJobQueue:
                 job.status = "processing"
                 job.started_at = time.time()
 
+            loop = asyncio.get_running_loop()
+            progress_token = _progress_reporter.set(
+                lambda metadata, target_id=job_id: loop.call_soon_threadsafe(self._record_progress, target_id, metadata)
+            )
             try:
                 result = await self._processor(job.payload)
                 async with self._lock:
@@ -160,10 +177,21 @@ class AiJobQueue:
                     job.status = "failed"
                     job.completed_at = time.time()
             finally:
+                _progress_reporter.reset(progress_token)
                 async with self._lock:
                     if self._active_job_id == job_id:
                         self._active_job_id = None
                 self._queue.task_done()
+
+    def _record_progress(self, job_id: str, metadata: dict[str, Any]) -> None:
+        # Always runs on the event loop, including reports from to_thread.
+        job = self._jobs.get(job_id)
+        if not job or job.status not in {"processing", "completed"}:
+            return
+        job.progress = dict(metadata)
+        if not job.progress_history or job.progress_history[-1]["stage"] != metadata["stage"]:
+            job.progress_history.append(dict(metadata))
+            job.progress_history = job.progress_history[-20:]
 
     def _snapshot_locked(self, job: AiJob) -> dict[str, Any]:
         position: int | None = None
@@ -182,6 +210,7 @@ class AiJobQueue:
         return {
             "job_id": job.id,
             "status": job.status,
+            "progress": ({**job.progress, "history": list(job.progress_history)} if job.progress else None),
             "position": position,
             "jobs_ahead": jobs_ahead,
             "queue_depth": len(self._waiting) + (1 if self._active_job_id else 0),

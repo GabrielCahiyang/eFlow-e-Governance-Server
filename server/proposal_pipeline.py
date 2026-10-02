@@ -22,6 +22,7 @@ from laya_service import (
     parse_employees_block,
 )
 from pygad_optimizer import run_proposal_optimization
+from job_queue import report_job_progress
 
 logger = logging.getLogger("eflow.proposal_pipeline")
 
@@ -164,6 +165,7 @@ def execute_proposal_pipeline(
     """Execute DeepSeek R1 -> LAYA decisions -> PyGAD optimization."""
     start_time = time.time_ns()
     user_prompt = str(messages[-1].get("content") or "")
+    report_job_progress("reading_section", "Reading the proposal section.")
     parsed_prompt = parse_section_prompt(user_prompt)
 
     section_title = parsed_prompt["section_title"]
@@ -185,6 +187,7 @@ def execute_proposal_pipeline(
 
     deepseek_error: Exception | None = None
     try:
+        report_job_progress("breaking_down", "Breaking this section into tasks.")
         r1_result = llm.create_chat_completion(messages=r1_messages)
         content = (
             r1_result["choices"][0]["message"]["content"]
@@ -192,6 +195,7 @@ def execute_proposal_pipeline(
             else ""
         )
         eval_count = r1_result.get("usage", {}).get("completion_tokens", 0)
+        report_job_progress("checking_structure", "Checking the generated task structure.")
         parsed_json = extract_json_payload(content)
         if parsed_json and isinstance(parsed_json.get("tasks"), list):
             raw_tasks = [t for t in parsed_json["tasks"] if isinstance(t, dict)]
@@ -214,6 +218,7 @@ def execute_proposal_pipeline(
         )
 
     # ─── TIER 2: Laya Decision Layer (System-1 Bounded Decisions) ───────
+    report_job_progress("checking_departments", "Checking departments and approval requirements.")
     lead_history = get_current_lead_history()
     enriched_tasks: list[dict[str, Any]] = []
     for task in raw_tasks:
@@ -227,6 +232,7 @@ def execute_proposal_pipeline(
         enriched_tasks.append(enriched)
 
     # ─── TIER 3: PyGAD multi-objective assignment + schedule ──────────
+    report_job_progress("assigning_team", "Suggesting team assignments and task schedules.")
     optimizer_status = "skipped_no_employees"
     optimization_summary: dict[str, Any] = {
         "profile": os.getenv("PYGAD_DECOMPOSITION_PROFILE", "balanced"),
@@ -259,6 +265,7 @@ def execute_proposal_pipeline(
         for task in final_tasks:
             task["recommendationSource"] = "laya"
 
+    report_job_progress("checking_plan", "Checking the completed section for your review.")
     final_payload = {
         "tasks": final_tasks,
         "pipeline": {

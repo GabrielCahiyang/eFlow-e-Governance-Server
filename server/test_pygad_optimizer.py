@@ -228,6 +228,20 @@ class TestOptimizationRun(unittest.TestCase):
             for task in result["tasks"]
         ))
 
+    def test_accepts_currency_formatted_budget_amounts(self):
+        tasks = [
+            {
+                **SAMPLE_TASKS[0],
+                "budgetLines": [{**SAMPLE_TASKS[0]["budgetLines"][0], "amount": "PHP 105,000.00"}],
+            }
+        ]
+        result = run_proposal_optimization(
+            tasks=tasks,
+            employees=SAMPLE_EMPLOYEES,
+            num_generations=10,
+        )
+        self.assertEqual(len(result["tasks"]), 1)
+
     def test_generation_history_length(self):
         result = run_proposal_optimization(
             tasks=SAMPLE_TASKS,
