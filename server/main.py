@@ -57,6 +57,8 @@ from proposal_pipeline import (
     is_proposal_decomposition_prompt,
     execute_proposal_pipeline,
 )
+from workspace_decomposition import execute_workspace_pipeline, validate_workspace_request
+from workspace_staffing import execute_staffing_pipeline, validate_staffing_request
 from model_registry import (
     ModelEntry,
     get_model,
@@ -703,6 +705,10 @@ def _sync_chat(llm, messages: list[dict], model_tag: str):
 
 def _execute_queued_chat(body: dict) -> dict:
     """Run one queued non-streaming job in the queue's worker thread."""
+    if body.get("workspace_decomposition") is not None:
+        validate_workspace_request(body["workspace_decomposition"])
+    if body.get("workspace_staffing") is not None:
+        validate_staffing_request(body["workspace_staffing"])
     model_tag = body.get("model", "")
     entry = get_model(model_tag)
     if not entry:
@@ -723,7 +729,11 @@ def _execute_queued_chat(body: dict) -> dict:
         }
         for message in body.get("messages", [])
     ]
-    if is_proposal_decomposition_prompt(chat_messages):
+    if body.get("workspace_staffing") is not None:
+        response = execute_staffing_pipeline(llm, body["workspace_staffing"], model_tag)
+    elif body.get("workspace_decomposition") is not None:
+        response = execute_workspace_pipeline(llm, body["workspace_decomposition"], model_tag)
+    elif is_proposal_decomposition_prompt(chat_messages):
         response = execute_proposal_pipeline(llm, chat_messages, model_tag)
     else:
         response = _sync_chat(llm, chat_messages, model_tag)
@@ -794,6 +804,10 @@ async def enqueue_chat_job(request: Request):
         if not isinstance(messages, list) or not messages:
             return JSONResponse({"error": "messages are required"}, status_code=400)
         request_id = str(body.get("request_id", "")).strip() or None
+        if body.get("workspace_decomposition") is not None:
+            validate_workspace_request(body["workspace_decomposition"])
+        if body.get("workspace_staffing") is not None:
+            validate_staffing_request(body["workspace_staffing"])
         snapshot = await job_queue.submit(
             owner_id,
             {**body, "stream": False},

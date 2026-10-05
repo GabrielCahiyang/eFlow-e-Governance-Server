@@ -158,8 +158,8 @@ class ProposalOptimizer:
         for idx, t in enumerate(tasks):
             # Parse duration in days (default 3)
             dur_str = str(t.get("estimatedDuration") or t.get("duration_days") or "3")
-            digits = "".join(ch for ch in dur_str if ch.isdigit())
-            dur = int(digits) if digits else 3
+            from duration_parser import duration_days
+            dur = duration_days(dur_str)
             self.durations.append(max(1, dur))
             
             # Hours

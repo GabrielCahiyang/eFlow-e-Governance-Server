@@ -13,7 +13,8 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+from uuid import UUID
 
 import aiohttp
 from dotenv import load_dotenv
@@ -21,6 +22,8 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from workspace_gateway_context import checked_workspace_payload
+from staffing_gateway_context import checked_staffing_payload
 
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -60,11 +63,25 @@ class ChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=500_000)
 
 
+class WorkspaceDecompositionRequest(BaseModel):
+    schemaVersion: Literal[1]
+    projectId: UUID
+    sourceText: str = Field(min_length=1, max_length=500_000)
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkspaceStaffingRequest(BaseModel):
+    schemaVersion: Literal[1]
+    taskId: UUID
+
+
 class ChatRequest(BaseModel):
     model: str = Field(min_length=1, max_length=200)
     messages: list[ChatMessage] = Field(min_length=1, max_length=200)
     stream: bool = False
     request_id: str | None = Field(default=None, min_length=1, max_length=100)
+    workspace_decomposition: WorkspaceDecompositionRequest | None = None
+    workspace_staffing: WorkspaceStaffingRequest | None = None
 
 
 class ProposalValidationRequest(BaseModel):
@@ -72,6 +89,7 @@ class ProposalValidationRequest(BaseModel):
 
     document_text: str = Field(min_length=1, max_length=500_000)
     file_name: str = Field(default="", max_length=255)
+    mode: Literal['proposal', 'workspace'] = 'proposal'
 
 
 class InternalAiKeyCache:
@@ -195,6 +213,18 @@ async def _require_active_user(request: Request) -> str:
     return user_id
 
 
+async def _read_staffing_context(session, request, task_id):
+    # The full application gateway remains the single source of staffing
+    # eligibility. Forward the user's JWT, never the service-role key.
+    origin = os.getenv('EFLOW_APP_GATEWAY_ORIGIN', 'http://127.0.0.1:8322').rstrip('/')
+    async with session.get(f'{origin}/controlpanelEflow/api/staffing/{task_id}/context',
+            headers={'Authorization':request.headers.get('Authorization','')}) as response:
+        data = await response.json()
+        if response.status != 200:
+            raise HTTPException(response.status, data.get('detail','Staffing context could not be verified.'))
+        return data
+
+
 async def _proxy_ai_request(
     method: str,
     path: str,
@@ -209,6 +239,23 @@ async def _proxy_ai_request(
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=timeout_seconds, connect=10),
         ) as session:
+            if payload and payload.get('workspace_staffing') is not None:
+                async def read_context(task_id):
+                    return await _read_staffing_context(session, request, task_id)
+                payload = await checked_staffing_payload(payload, read_context)
+            if payload and payload.get('workspace_decomposition'):
+                async def read_rows(table: str, params: dict) -> list:
+                    async with session.get(
+                        f'{SUPABASE_URL}/rest/v1/{table}', params=params,
+                        headers=_service_headers(),
+                    ) as response:
+                        if response.status != 200:
+                            raise HTTPException(status_code=503, detail='Project context could not be verified.')
+                        rows = await response.json()
+                        if not isinstance(rows, list):
+                            raise HTTPException(status_code=503, detail='Project context could not be verified.')
+                        return rows
+                payload = await checked_workspace_payload(payload, user_id, read_rows)
             async with session.request(
                 method,
                 f"{INTERNAL_AI_BASE_URL}/{path.lstrip('/')}",
@@ -256,6 +303,16 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "service": "eflow-control-gateway"}
 
 
+@app.get('/controlpanelEflow/api/staffing/{task_id}/context')
+async def staffing_context(task_id: UUID, request: Request):
+    await _require_active_user(request)
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30,connect=10)) as session:
+            return await _read_staffing_context(session,request,str(task_id))
+    except (aiohttp.ClientError,TimeoutError) as exc:
+        raise HTTPException(503,'The application staffing service is offline.') from exc
+
+
 @app.post("/controlpanelEflow/api/ai/jobs")
 async def enqueue_job(payload: ChatRequest, request: Request) -> Response:
     if payload.stream:
@@ -267,7 +324,7 @@ async def enqueue_job(payload: ChatRequest, request: Request) -> Response:
         "POST",
         "jobs",
         request,
-        payload=payload.model_dump(),
+        payload=payload.model_dump(mode='json', exclude_none=True),
     )
 
 
@@ -282,7 +339,7 @@ async def proxy_chat(payload: ChatRequest, request: Request) -> Response:
         "POST",
         "chat",
         request,
-        payload=payload.model_dump(),
+        payload=payload.model_dump(mode='json', exclude_none=True),
         timeout_seconds=AI_TIMEOUT_SECONDS,
     )
 
