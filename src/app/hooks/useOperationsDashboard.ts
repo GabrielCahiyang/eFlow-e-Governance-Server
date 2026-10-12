@@ -1,31 +1,44 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchOperationsSnapshot,
   fetchTunnelSnapshot,
   rotateTunnel,
   type OperationsSnapshot,
   type TunnelSnapshot,
-} from '../services/operationsService';
+} from "../services/operationsService";
 
 export function useOperationsDashboard(online: boolean) {
   const [operations, setOperations] = useState<OperationsSnapshot | null>(null);
   const [tunnel, setTunnel] = useState<TunnelSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rotating, setRotating] = useState(false);
+  const [history, setHistory] = useState<
+    Array<Pick<OperationsSnapshot, "captured_at" | "system" | "gpus">>
+  >([]);
+  const inFlight = useRef(false);
   const previousEndpoint = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!online) return;
+    if (!online || inFlight.current) return;
+    inFlight.current = true;
     const [operationsResult, tunnelResult] = await Promise.allSettled([
       fetchOperationsSnapshot(),
       fetchTunnelSnapshot(),
     ]);
-    if (operationsResult.status === 'fulfilled') setOperations(operationsResult.value);
-    if (tunnelResult.status === 'fulfilled') {
+    if (operationsResult.status === "fulfilled") {
+      setOperations(operationsResult.value);
+      setHistory((current) => {
+        if (current.at(-1)?.captured_at === operationsResult.value.captured_at)
+          return current;
+        const { captured_at, system, gpus } = operationsResult.value;
+        return [...current, { captured_at, system, gpus }].slice(-75);
+      });
+    }
+    if (tunnelResult.status === "fulfilled") {
       setTunnel(tunnelResult.value);
       if (
         rotating &&
-        tunnelResult.value.status === 'online' &&
+        tunnelResult.value.status === "online" &&
         tunnelResult.value.endpoint &&
         tunnelResult.value.endpoint !== previousEndpoint.current
       ) {
@@ -33,18 +46,25 @@ export function useOperationsDashboard(online: boolean) {
       }
     }
     const failure = [operationsResult, tunnelResult].find(
-      (result): result is PromiseRejectedResult => result.status === 'rejected',
+      (result): result is PromiseRejectedResult => result.status === "rejected",
     );
     setError(failure ? String(failure.reason) : null);
+    inFlight.current = false;
   }, [online, rotating]);
 
   useEffect(() => {
     if (!online) {
-      setError('The private AI service is offline.');
+      setOperations(null);
+      setTunnel(null);
+      setHistory([]);
+      setError("The private AI service is offline.");
       return;
     }
+    setError(null);
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 4_000);
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void refresh();
+    }, 4_000);
     return () => window.clearInterval(timer);
   }, [online, refresh]);
 
@@ -54,16 +74,23 @@ export function useOperationsDashboard(online: boolean) {
     setError(null);
     try {
       await rotateTunnel();
-      setTunnel((current) => current ? { ...current, rotation_pending: true } : current);
+      setTunnel((current) =>
+        current ? { ...current, rotation_pending: true } : current,
+      );
     } catch (rotationError) {
       setRotating(false);
-      setError(rotationError instanceof Error ? rotationError.message : String(rotationError));
+      setError(
+        rotationError instanceof Error
+          ? rotationError.message
+          : String(rotationError),
+      );
       throw rotationError;
     }
   }, [tunnel?.endpoint]);
 
   return {
     operations,
+    history,
     tunnel,
     error,
     rotating: rotating || Boolean(tunnel?.rotation_pending),

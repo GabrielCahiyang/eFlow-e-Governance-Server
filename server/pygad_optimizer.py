@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+from service_monitor import observe_sync, update_current
 
 logger = logging.getLogger("eflow.pygad")
 
@@ -183,13 +184,23 @@ class ProposalOptimizer:
             )
             self.base_budgets.append(b_amt)
 
+        # These comparisons depend only on the submitted task and employee,
+        # not on a chromosome. Compute them once rather than per generation.
+        self.skill_matrix = [[_calculate_skill_overlap(
+            task.get("requiredSkills") or [], task.get("title", ""),
+            emp.get("skills", []), emp.get("strengths", []))
+            for emp in employees] for task in tasks]
+        self.weakness_matrix = [[_calculate_weakness_penalty(
+            (task.get("description") or "") + " " + (task.get("title") or ""),
+            emp.get("weaknesses", [])) for emp in employees] for task in tasks]
+        self.initial_workloads = [_as_number(emp.get("workload")) for emp in employees]
+        self.source_budget = sum(self.base_budgets)
+
     def _fitness_function(self, ga_instance: Any, solution: np.ndarray, solution_idx: int) -> float:
         """Multi-objective fitness evaluation.
         
-        Chromosome layout:
-        [0 .. N-1]     : Employee index assigned as lead for task i (integer 0..M-1)
-        [N .. 2N-1]    : Scheduling priority rank for task i (integer 1..100)
-        [2N .. 3N-1]   : Budget allocation modifier percentage (integer 80..120)
+        Chromosome: one employee index per task. Scheduling follows the
+        existing dependency order; approved source budgets remain fixed.
         """
         N = self.num_tasks
         M = self.num_employees
@@ -198,23 +209,13 @@ class ProposalOptimizer:
             return 100.0
 
         emp_assignments = [int(solution[i]) % M for i in range(N)]
-        sched_priorities = [int(solution[N + i]) for i in range(N)]
-        budget_factors = [int(solution[2 * N + i]) / 100.0 for i in range(N)]
 
         # 1. Skill Match Score (Higher is better)
-        skill_scores = []
-        for i in range(N):
-            emp = self.employees[emp_assignments[i]]
-            req_skills = self.raw_tasks[i].get("requiredSkills") or []
-            title = self.raw_tasks[i].get("title", "")
-            emp_skills = emp.get("skills", [])
-            emp_strengths = emp.get("strengths", [])
-            score = _calculate_skill_overlap(req_skills, title, emp_skills, emp_strengths)
-            skill_scores.append(score)
+        skill_scores = [self.skill_matrix[i][emp_assignments[i]] for i in range(N)]
         mean_skill = float(np.mean(skill_scores)) if skill_scores else 50.0
 
         # 2. Workload Variance (Lower is better)
-        emp_hours = [_as_number(emp.get("workload")) for emp in self.employees]
+        emp_hours = list(self.initial_workloads)
         for i in range(N):
             emp_idx = emp_assignments[i]
             emp_hours[emp_idx] += self.estimated_hours[i]
@@ -229,10 +230,8 @@ class ProposalOptimizer:
         for i in range(N):
             emp_idx = emp_assignments[i]
             lead_counts[emp_idx] += 1
-            emp = self.employees[emp_idx]
-            desc = (self.raw_tasks[i].get("description") or "") + " " + (self.raw_tasks[i].get("title") or "")
-            weakness_pen = _calculate_weakness_penalty(desc, emp.get("weaknesses", []))
-            
+            weakness_pen = self.weakness_matrix[i][emp_idx]
+
             # Burnout risk penalty if total hours > 60
             burnout_pen = 30.0 if emp_hours[emp_idx] > 60 else 0.0
             risk_penalties.append(weakness_pen + burnout_pen)
@@ -267,7 +266,7 @@ class ProposalOptimizer:
         schedule_score = max(0.0, 100.0 - max(0.0, (schedule_ratio - 1.0) * 50.0))
 
         # 5. Budget Knapsack Compliance
-        total_budget = sum(self.base_budgets[i] * budget_factors[i] for i in range(N))
+        total_budget = self.source_budget
         budget_score = 100.0
         if self.budget_cap and self.budget_cap > 0:
             if total_budget > self.budget_cap:
@@ -313,25 +312,18 @@ class ProposalOptimizer:
                 },
             }
 
-        num_genes = 3 * N
+        num_genes = N
         gene_space = []
         # Employee indices: 0 .. M-1
         for _ in range(N):
             gene_space.append(list(range(M)))
-        # Scheduling priority: 1 .. 100
-        for _ in range(N):
-            gene_space.append(list(range(1, 101)))
-        # Source proposal budgets are immutable during decomposition. Keep the
-        # budget gene at 100 so PyGAD evaluates compliance without rewriting
-        # figures extracted from the approved source document.
-        for _ in range(N):
-            gene_space.append([100])
-
         generation_history: List[float] = []
 
         def on_gen(ga: Any):
             best_fit = float(ga.best_solution()[1])
             generation_history.append(round(best_fit, 2))
+            update_current({"generation": ga.generations_completed, "generations": num_generations,
+                            "fitness_score": round(best_fit, 2)})
 
         ga_instance = pygad.GA(
             num_generations=num_generations,
@@ -354,8 +346,6 @@ class ProposalOptimizer:
 
         # Decode best solution
         emp_assignments = [int(best_sol[i]) % M for i in range(N)]
-        sched_priorities = [int(best_sol[N + i]) for i in range(N)]
-        budget_factors = [int(best_sol[2 * N + i]) / 100.0 for i in range(N)]
 
         # Simulate final schedule with best chromosome
         task_end_days = [0] * N
@@ -396,12 +386,7 @@ class ProposalOptimizer:
             ranked_support = sorted(
                 (k for k in range(M) if k != emp_idx),
                 key=lambda k: (
-                    -_calculate_skill_overlap(
-                        orig_task.get("requiredSkills") or [],
-                        orig_task.get("title", ""),
-                        self.employees[k].get("skills", []),
-                        self.employees[k].get("strengths", []),
-                    ),
+                    -self.skill_matrix[i][k],
                     emp_workload_tally[k],
                 ),
             )
@@ -484,19 +469,11 @@ class ProposalOptimizer:
             "profile_used": self.profile.name,
             "metrics": {
                 "skill_match_score": round(float(np.mean([
-                    _calculate_skill_overlap(
-                        t.get("requiredSkills") or [],
-                        t.get("title", ""),
-                        self.employees[emp_assignments[i]].get("skills", []),
-                        self.employees[emp_assignments[i]].get("strengths", []),
-                    )
-                    for i, t in enumerate(self.raw_tasks)
+                    self.skill_matrix[i][emp_assignments[i]] for i in range(N)
                 ])), 1),
                 "workload_variance": round(float(np.var(emp_workload_tally)), 2),
                 "makespan_days": max(task_end_days) if task_end_days else 1,
-                "total_budget": round(sum(
-                    self.base_budgets[i] * budget_factors[i] for i in range(N)
-                ), 2),
+                "total_budget": round(self.source_budget, 2),
             },
         }
 
@@ -509,10 +486,9 @@ def run_proposal_optimization(
     num_generations: int = 40,
 ) -> Dict[str, Any]:
     """Convenience entry point for optimizing proposal task assignments."""
-    optimizer = ProposalOptimizer(
-        tasks=tasks,
-        employees=employees,
-        profile=profile,
-        budget_cap=budget_cap,
-    )
-    return optimizer.optimize(num_generations=num_generations)
+    def execute():
+        optimizer = ProposalOptimizer(tasks=tasks, employees=employees, profile=profile, budget_cap=budget_cap)
+        return optimizer.optimize(num_generations=num_generations)
+    return observe_sync("pygad", "assign_and_schedule", execute,
+                        metadata={"tasks": len(tasks), "employees": len(employees),
+                                  "profile": profile, "generations": num_generations})

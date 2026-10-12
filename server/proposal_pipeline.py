@@ -23,6 +23,7 @@ from laya_service import (
 )
 from pygad_optimizer import run_proposal_optimization
 from job_queue import report_job_progress
+from service_monitor import record_skip
 
 logger = logging.getLogger("eflow.proposal_pipeline")
 
@@ -232,7 +233,6 @@ def execute_proposal_pipeline(
         enriched_tasks.append(enriched)
 
     # ─── TIER 3: PyGAD multi-objective assignment + schedule ──────────
-    report_job_progress("assigning_team", "Suggesting team assignments and task schedules.")
     optimizer_status = "skipped_no_employees"
     optimization_summary: dict[str, Any] = {
         "profile": os.getenv("PYGAD_DECOMPOSITION_PROFILE", "balanced"),
@@ -242,6 +242,7 @@ def execute_proposal_pipeline(
     }
     final_tasks = enriched_tasks
     if employees:
+        report_job_progress("assigning_team", "Suggesting team assignments and task schedules.")
         generations = max(
             10,
             min(200, int(os.getenv("PYGAD_DECOMPOSITION_GENERATIONS", "20"))),
@@ -262,6 +263,8 @@ def execute_proposal_pipeline(
             "metrics": optimization["metrics"],
         }
     else:
+        record_skip("pygad", "assign_and_schedule", "No employee context supplied.")
+        report_job_progress("pygad_skipped", "PyGAD skipped: no employee context supplied.")
         for task in final_tasks:
             task["recommendationSource"] = "laya"
 

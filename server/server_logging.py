@@ -17,6 +17,7 @@ import time
 from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
+from uuid import uuid4
 
 import aiohttp
 
@@ -90,6 +91,7 @@ def make_entry(
     """Create a log-entry dict."""
     now = datetime.now(timezone.utc)
     entry: dict = {
+        "id": str(uuid4()),
         "timestamp": now.isoformat(),
         "level": level.upper(),
         "message": message,
@@ -129,7 +131,7 @@ class SSEManager:
         self._clients: list[asyncio.Queue] = []
 
     def subscribe(self) -> asyncio.Queue:
-        q: asyncio.Queue = asyncio.Queue()
+        q: asyncio.Queue = asyncio.Queue(maxsize=256)
         self._clients.append(q)
         return q
 
@@ -140,14 +142,14 @@ class SSEManager:
             pass
 
     async def broadcast(self, entry: dict) -> None:
-        dead: list[asyncio.Queue] = []
         for q in self._clients:
             try:
                 q.put_nowait(entry)
             except asyncio.QueueFull:
-                dead.append(q)
-        for q in dead:
-            self._clients.remove(q)
+                # Keep the client connected and discard its oldest unread log.
+                # Log delivery must never allocate unbounded memory or stall AI.
+                q.get_nowait()
+                q.put_nowait(entry)
 
     @property
     def client_count(self) -> int:
@@ -194,6 +196,30 @@ class SupabaseLogWriter:
         self._base_url = supabase_url.rstrip("/")
         self._key = service_role_key
         self._session: Optional[aiohttp.ClientSession] = None
+        self._pending = asyncio.Queue(maxsize=256)
+        self._worker = None
+        self.dropped = 0
+
+    async def start(self):
+        if self._worker is None or self._worker.done():
+            self._worker = asyncio.create_task(self._run(), name="eflow-log-writer")
+
+    def enqueue(self, entry):
+        if entry.get("type", LOG_TYPE_GENERAL) not in _PERSIST_TYPES:
+            return
+        if self._pending.full():
+            self._pending.get_nowait()
+            self._pending.task_done()
+            self.dropped += 1
+        self._pending.put_nowait(entry)
+
+    async def _run(self):
+        while True:
+            entry = await self._pending.get()
+            try:
+                await self.write(entry)
+            finally:
+                self._pending.task_done()
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -237,6 +263,17 @@ class SupabaseLogWriter:
             print(f"[SupabaseLogWriter] Error: {exc}")
 
     async def close(self) -> None:
+        if self._worker:
+            try:
+                await asyncio.wait_for(self._pending.join(), timeout=2)
+            except asyncio.TimeoutError:
+                pass
+            self._worker.cancel()
+            try:
+                await self._worker
+            except asyncio.CancelledError:
+                pass
+            self._worker = None
         if self._session and not self._session.closed:
             await self._session.close()
 
@@ -266,10 +303,21 @@ class BufferAndBroadcastHandler(logging.Handler):
         self.log_buffer = log_buffer
         self.sse_manager = sse_manager
         self.firebase_writer = firebase_writer  # name kept for compatibility
+        self._loop = None
+
+    def bind_loop(self, loop):
+        self._loop = loop
+
+    def _deliver(self, entry):
+        asyncio.create_task(self.sse_manager.broadcast(entry))
+        if self.firebase_writer:
+            self.firebase_writer.enqueue(entry)
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            msg = self.format(record)
+            msg = record.getMessage()
+            if record.exc_info:
+                msg += "\n" + logging.Formatter().formatException(record.exc_info)
             entry = make_entry(
                 message=msg,
                 level=record.levelname,
@@ -281,11 +329,10 @@ class BufferAndBroadcastHandler(logging.Handler):
             # Schedule broadcast + Supabase write on the running event loop
             try:
                 loop = asyncio.get_running_loop()
-                loop.create_task(self.sse_manager.broadcast(entry))
-                if self.firebase_writer:
-                    loop.create_task(self.firebase_writer.write(entry))
+                self._deliver(entry)
             except RuntimeError:
-                # No running event loop (e.g. during startup before uvicorn)
-                pass
+                # Optimizer/wallet threads must reach existing SSE subscribers.
+                if self._loop and not self._loop.is_closed():
+                    self._loop.call_soon_threadsafe(self._deliver, entry)
         except Exception:
             self.handleError(record)

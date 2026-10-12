@@ -3,18 +3,7 @@ import json
 import time
 from proposal_pipeline import extract_json_payload
 from job_queue import report_job_progress
-
-def validate_staffing_request(request):
-    if not isinstance(request, dict) or request.get('schemaVersion') != 1:
-        raise ValueError('Unsupported staffing version.')
-    context = request.get('context') or {}
-    candidates = context.get('candidates')
-    if not isinstance(candidates, list) or not 1 <= len(candidates) <= 200:
-        raise ValueError('Staffing requires between 1 and 200 confirmed eligible profiles.')
-    if not isinstance(context.get('task'), dict):
-        raise ValueError('Task context is required.')
-    if len(json.dumps(context, ensure_ascii=False)) > 100000:
-        raise ValueError('Confirmed profile context is too large. Shorten professional summaries before retrying.')
+from request_validation import validate_staffing_request
 
 def normalize_recommendations(payload, context):
     rows = payload.get('recommendations') if isinstance(payload, dict) else None

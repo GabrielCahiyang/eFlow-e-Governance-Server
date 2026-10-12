@@ -1,60 +1,156 @@
-import { useEffect, useRef, useState } from 'react';
-import { Terminal, Trash2 } from 'lucide-react';
-import type { LogEntry, ServerStatus, UsageStats } from '../services/serverLogs';
-import { getLogColor, getLogTypeLabel, isMeaningfulLog } from '../services/serverLogs';
+import { useEffect, useRef, useState } from "react";
+import { Button } from "@vibe/button";
+import { Terminal, Trash2 } from "lucide-react";
+import type {
+  LogEntry,
+  ServerStatus,
+  UsageStats,
+} from "../services/serverLogs";
+import { isMeaningfulLog } from "../services/serverLogs";
 
-type Props = {
+function serviceOf(entry: LogEntry) {
+  const source = `${entry.source} ${entry.message}`.toLowerCase();
+  if (/pygad|optimization/.test(source)) return "pygad";
+  if (/polygon|blockchain|anchor_genesis|anchor_milestone/.test(source))
+    return "blockchain";
+  if (/laya/.test(source)) return "laya";
+  if (
+    /inference|model_runtime|proposal.pipeline|workspace.decomposition/.test(
+      source,
+    ) ||
+    entry.type === "chat_request" ||
+    entry.type === "model_load"
+  )
+    return "ai";
+  return "server";
+}
+const labels: Record<string, string> = {
+  pygad: "PyGAD",
+  laya: "LAYA",
+  blockchain: "Blockchain",
+  ai: "AI",
+  server: "Server",
+};
+
+export function ServerLogsPanel({
+  logs,
+  serverStatus,
+  usageStats,
+  onClear,
+}: {
   logs: LogEntry[];
   serverStatus: ServerStatus;
   usageStats: UsageStats;
   onClear: () => void;
-};
-
-function formatTimestamp(value: string) {
-  return new Date(value).toLocaleTimeString('en-US', {
-    hour12: false,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-}
-
-export function ServerLogsPanel({ logs, serverStatus, usageStats, onClear }: Props) {
+}) {
   const [showHealth, setShowHealth] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const visibleLogs = showHealth ? logs : logs.filter(isMeaningfulLog);
-
+  const [service, setService] = useState("all");
+  const scroll = useRef<HTMLDivElement>(null);
+  const visible = (showHealth ? logs : logs.filter(isMeaningfulLog)).filter(
+    (entry) => service === "all" || serviceOf(entry) === service,
+  );
   useEffect(() => {
-    if (autoScroll && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [autoScroll, visibleLogs.length]);
-
+    if (autoScroll && scroll.current)
+      scroll.current.scrollTop = scroll.current.scrollHeight;
+  }, [autoScroll, visible.length]);
   return (
-    <div className="flex h-full flex-col bg-[#111310] text-neutral-200">
-      <div className="flex flex-wrap items-center gap-3 border-b border-white/10 px-4 py-2.5">
-        <span className="flex items-center gap-2 text-[11px] font-semibold text-neutral-300"><span className={`h-2 w-2 rounded-full ${serverStatus === 'online' ? 'bg-emerald-400' : 'bg-red-400'}`} />{serverStatus === 'online' ? 'Streaming' : 'Disconnected'}</span>
-        <span className="text-[10px] text-neutral-500">{visibleLogs.length} events</span>
-        <span className="text-[10px] text-neutral-500">{usageStats.totalRequests} AI requests</span>
-
-        <label className="ml-auto flex cursor-pointer items-center gap-2 text-[10px] text-neutral-400"><input type="checkbox" checked={showHealth} onChange={(event) => setShowHealth(event.target.checked)} className="accent-emerald-500" />Health polls</label>
-        <label className="flex cursor-pointer items-center gap-2 text-[10px] text-neutral-400"><input type="checkbox" checked={autoScroll} onChange={(event) => setAutoScroll(event.target.checked)} className="accent-emerald-500" />Follow</label>
-        <button onClick={onClear} className="flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-white/5 text-neutral-400 hover:bg-white/10 hover:text-white" title="Clear buffered logs"><Trash2 className="h-3.5 w-3.5" /></button>
+    <div className="activity-panel">
+      <div className="activity-toolbar">
+        <span className="status-text">
+          <i
+            className={`status-dot ${serverStatus === "online" ? "positive" : ""}`}
+          />
+          {serverStatus === "online" ? "Live" : "Not connected"}
+        </span>
+        <span className="subtle">{visible.length} events</span>
+        <label className="service-filter">
+          Service
+          <select
+            aria-label="Activity service filter"
+            value={service}
+            onChange={(event) => setService(event.target.value)}
+          >
+            <option value="all">All services</option>
+            {Object.entries(labels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={showHealth}
+            onChange={(e) => setShowHealth(e.target.checked)}
+          />
+          Include health checks
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={autoScroll}
+            onChange={(e) => setAutoScroll(e.target.checked)}
+          />
+          Follow latest
+        </label>
+        <Button
+          kind="tertiary"
+          size="small"
+          leftIcon={({ className }) => (
+            <Trash2 className={className} size={16} />
+          )}
+          onClick={onClear}
+        >
+          Clear view
+        </Button>
       </div>
-
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-2 font-mono text-[10px] leading-5">
-        {visibleLogs.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-neutral-600"><Terminal className="h-6 w-6" /><span>Waiting for server activity…</span></div>
-        ) : visibleLogs.map((entry, index) => {
-          const color = getLogColor(entry);
-          return (
-            <div key={`${entry.timestamp}-${index}`} className="grid grid-cols-[64px_58px_1fr_auto] items-start gap-2 rounded px-2 py-0.5 hover:bg-white/[0.04]">
-              <span className="text-neutral-600">{formatTimestamp(entry.timestamp)}</span>
-              <span className="truncate text-[9px] font-semibold uppercase tracking-[0.06em]" style={{ color }}>{getLogTypeLabel(entry.type)}</span>
-              <span className="min-w-0 break-words text-neutral-300">{entry.message}</span>
-              <span className="flex gap-2 text-neutral-500">{entry.extra?.tokens != null && <span>{entry.extra.tokens}tk</span>}{entry.extra?.latency_ms != null && <span>{entry.extra.latency_ms}ms</span>}</span>
+      <div className="activity-rows" ref={scroll}>
+        {visible.length ? (
+          visible.map((entry, index) => (
+            <div
+              className={`activity-row ${entry.level === "ERROR" ? "is-error" : ""}`}
+              key={entry.id ?? `${entry.timestamp}-${index}`}
+            >
+              <time dateTime={entry.timestamp}>
+                {new Date(entry.timestamp).toLocaleTimeString([], {
+                  hour12: false,
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                })}
+              </time>
+              <span className="activity-source">
+                {entry.type === "chat_request"
+                  ? "AI request"
+                  : entry.type === "model_load"
+                    ? "Model"
+                    : entry.level === "ERROR"
+                      ? "Error"
+                      : labels[serviceOf(entry)]}
+              </span>
+              <span className="activity-message">{entry.message}</span>
+              <span className="activity-latency">
+                {entry.extra?.latency_ms != null
+                  ? `${entry.extra.latency_ms} ms`
+                  : ""}
+              </span>
             </div>
-          );
-        })}
+          ))
+        ) : (
+          <div className="empty-state">
+            <Terminal size={26} strokeWidth={1.3} />
+            <h3>
+              {service === "all" ? "No activity yet" : "No matching activity"}
+            </h3>
+            <p>Service events will appear here when they run.</p>
+          </div>
+        )}
+      </div>
+      <div className="queue-foot">
+        <span>{usageStats.totalRequests} AI requests observed</span>
+        <span>Latest 500 events</span>
       </div>
     </div>
   );

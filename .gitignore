@@ -8,3 +8,6 @@ dist/
 *.json.bak
 server/.tunnel-rotate.request
 server/.tunnel-rotate.tmp
+
+server/test-results.log
+server/runtime-benchmark.log

@@ -2,37 +2,13 @@
 // All requests go through the Vite dev-server proxy (/api → localhost:8321)
 // so there are no CORS issues in the browser.
 
-const BASE = '/api';
+const BASE = "/api";
 
-let cachedAuthKey: string | null = null;
-let authKeyPromise: Promise<string | null> | null = null;
-
-export function invalidateAuthKeyCache(): void {
-  cachedAuthKey = null;
-  authKeyPromise = null;
-}
-
-async function getAuthKey(): Promise<string | null> {
-  if (cachedAuthKey) return cachedAuthKey;
-  if (!authKeyPromise) {
-    authKeyPromise = fetch(`${BASE}/authkey`)
-      .then(async (res) => {
-        if (!res.ok) return null;
-        const data = await res.json();
-        const key = typeof data.api_key === 'string' ? data.api_key : null;
-        if (key) cachedAuthKey = key;
-        return key;
-      })
-      .catch(() => null)
-      .finally(() => {
-        authKeyPromise = null;
-      });
-  }
-  return authKeyPromise;
-}
+export { invalidateAuthKeyCache } from "./authKeyService";
+import { fetchAuthKey as getAuthKey } from "./authKeyService";
 
 async function withAuthHeaders(
-  extra: Record<string, string> = {}
+  extra: Record<string, string> = {},
 ): Promise<Record<string, string>> {
   const key = await getAuthKey();
   return key ? { ...extra, Authorization: `Bearer ${key}` } : { ...extra };
@@ -66,7 +42,7 @@ export type RunningModel = {
 };
 
 export type ChatMessage = {
-  role: 'system' | 'user' | 'assistant';
+  role: "system" | "user" | "assistant";
   content: string;
   images?: string[]; // base64-encoded images for vision models
 };
@@ -76,6 +52,7 @@ export type ChatMessage = {
 export async function listModels(): Promise<LLMModel[]> {
   const res = await fetch(`${BASE}/tags`, {
     headers: await withAuthHeaders(),
+    signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) throw new Error(`/api/tags failed: ${res.status}`);
   const data = await res.json();
@@ -87,6 +64,7 @@ export async function listModels(): Promise<LLMModel[]> {
 export async function listRunningModels(): Promise<RunningModel[]> {
   const res = await fetch(`${BASE}/ps`, {
     headers: await withAuthHeaders(),
+    signal: AbortSignal.timeout(10000),
   });
   if (!res.ok) throw new Error(`/api/ps failed: ${res.status}`);
   const data = await res.json();
@@ -100,8 +78,8 @@ export async function chatCompletion(
   messages: ChatMessage[],
 ): Promise<{ content: string; totalDuration: number; evalCount: number }> {
   const res = await fetch(`${BASE}/chat`, {
-    method: 'POST',
-    headers: await withAuthHeaders({ 'Content-Type': 'application/json' }),
+    method: "POST",
+    headers: await withAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ model, messages, stream: false }),
   });
 
@@ -112,8 +90,8 @@ export async function chatCompletion(
 
   const data = await res.json();
   return {
-    content: data.message?.content ?? '',
-    totalDuration: data.total_duration ?? 0,   // nanoseconds
+    content: data.message?.content ?? "",
+    totalDuration: data.total_duration ?? 0, // nanoseconds
     evalCount: data.eval_count ?? 0,
   };
 }
@@ -128,8 +106,8 @@ export async function chatCompletionStream(
   signal?: AbortSignal,
 ): Promise<void> {
   const res = await fetch(`${BASE}/chat`, {
-    method: 'POST',
-    headers: await withAuthHeaders({ 'Content-Type': 'application/json' }),
+    method: "POST",
+    headers: await withAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ model, messages, stream: true }),
     signal,
   });
@@ -140,10 +118,10 @@ export async function chatCompletionStream(
   }
 
   const reader = res.body?.getReader();
-  if (!reader) throw new Error('No readable stream');
+  if (!reader) throw new Error("No readable stream");
 
   const decoder = new TextDecoder();
-  let buffer = '';
+  let buffer = "";
   let lastStats = { totalDuration: 0, evalCount: 0 };
 
   while (true) {
@@ -153,8 +131,8 @@ export async function chatCompletionStream(
     buffer += decoder.decode(value, { stream: true });
 
     // Server sends newline-delimited JSON
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
 
     for (const line of lines) {
       if (!line.trim()) continue;
@@ -182,7 +160,9 @@ export async function chatCompletionStream(
 
 export async function pingBackend(): Promise<boolean> {
   try {
-    const res = await fetch(`${BASE}/health`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${BASE}/health`, {
+      signal: AbortSignal.timeout(3000),
+    });
     return res.ok;
   } catch {
     return false;
@@ -194,8 +174,8 @@ export async function pingBackend(): Promise<boolean> {
 export async function downloadModel(modelTag: string): Promise<boolean> {
   try {
     const res = await fetch(`${BASE}/download`, {
-      method: 'POST',
-      headers: await withAuthHeaders({ 'Content-Type': 'application/json' }),
+      method: "POST",
+      headers: await withAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ model: modelTag }),
     });
     return res.ok;
@@ -212,8 +192,8 @@ export async function toggleModel(
 ): Promise<{ ok: boolean; disabledModels: string[] }> {
   try {
     const res = await fetch(`${BASE}/models/toggle`, {
-      method: 'PUT',
-      headers: await withAuthHeaders({ 'Content-Type': 'application/json' }),
+      method: "PUT",
+      headers: await withAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ model: modelTag, enabled }),
     });
     if (!res.ok) return { ok: false, disabledModels: [] };
@@ -230,6 +210,7 @@ export async function getDisabledModels(): Promise<string[]> {
   try {
     const res = await fetch(`${BASE}/models/status`, {
       headers: await withAuthHeaders(),
+      signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return [];
     const data = await res.json();

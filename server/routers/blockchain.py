@@ -10,13 +10,30 @@ Endpoints:
 """
 
 import logging
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from service_monitor import observed_executor
 
 logger = logging.getLogger("eflow.routers.blockchain")
+
+# A single wallet executor prevents nonce races, including after a caller
+# disconnects while an already-submitted transaction is waiting for a receipt.
+_wallet_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="eflow-wallet")
+_wallet_slots = asyncio.Semaphore(4)
+
+async def wallet_call(function, *args, metadata=None):
+    details = dict(metadata or {})
+    ledger = getattr(function, "__self__", None)
+    if ledger is not None:
+        details["simulated"] = ledger.simulation
+    return await observed_executor(_wallet_executor, _wallet_slots, "blockchain", function.__name__,
+                                   partial(function, *args), metadata=details)
 
 router = APIRouter(prefix="/api/blockchain", tags=["blockchain"])
 
@@ -71,7 +88,8 @@ async def anchor_proposal(body: AnchorProposalRequest) -> JSONResponse:
 
         ledger = get_ledger()
         payload = {"id": body.proposal_id, **body.proposal_data}
-        receipt = ledger.anchor_genesis(payload)
+        receipt = await wallet_call(ledger.anchor_genesis, payload,
+                                    metadata={"proposal_id": body.proposal_id, "event_type": "genesis"})
 
         return JSONResponse(content=asdict(receipt))
 
@@ -99,7 +117,8 @@ async def anchor_event(body: AnchorEventRequest) -> JSONResponse:
 
         ledger = get_ledger()
         milestone_data = {"type": body.event_type, **body.event_data}
-        receipt = ledger.anchor_milestone(body.proposal_id, milestone_data)
+        receipt = await wallet_call(ledger.anchor_milestone, body.proposal_id, milestone_data,
+                                    metadata={"proposal_id": body.proposal_id, "event_type": body.event_type})
 
         return JSONResponse(content=asdict(receipt))
 
@@ -123,7 +142,8 @@ async def anchor_archival(body: AnchorProposalRequest) -> JSONResponse:
         from dataclasses import asdict
 
         ledger = get_ledger()
-        receipt = ledger.anchor_archival_seal(body.proposal_id, body.proposal_data)
+        receipt = await wallet_call(ledger.anchor_archival_seal, body.proposal_id, body.proposal_data,
+                                    metadata={"proposal_id": body.proposal_id, "event_type": "archival_seal"})
 
         return JSONResponse(content=asdict(receipt))
 
@@ -156,7 +176,8 @@ async def verify_on_chain(
         from polygon_service import get_ledger
 
         ledger = get_ledger()
-        result = ledger.verify_on_chain(doc_hash, tx_hash)
+        result = await wallet_call(ledger.verify_on_chain, doc_hash, tx_hash,
+                                   metadata={"document_hash": doc_hash, "tx_hash": tx_hash})
 
         return JSONResponse(content=result)
 
@@ -183,7 +204,8 @@ async def get_certificate(
         from polygon_service import get_ledger
 
         ledger = get_ledger()
-        certificate = ledger.get_proposal_certificate(proposal_id, body.receipts)
+        certificate = await wallet_call(ledger.get_proposal_certificate, proposal_id, body.receipts,
+                                        metadata={"proposal_id": proposal_id})
 
         return JSONResponse(content=certificate)
 

@@ -5,13 +5,17 @@ Each model entry maps a local tag (used by the frontend) to a HuggingFace repo
 and filename.  Models are downloaded lazily on first use.
 """
 
-import os
+import hashlib
 import logging
+import os
+import shutil
+import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, hf_hub_url
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +25,11 @@ MODELS_DIR = Path(__file__).parent.parent / "models"
 @dataclass
 class ModelEntry:
     """A single model definition."""
-    tag: str                  # e.g. "llama3:8b" — matches the frontend
+    tag: str                  # e.g. "deepseek-r1:8b" — matches the frontend
     display_name: str
     hf_repo: str              # HuggingFace repo id
     hf_filename: str          # The .gguf file inside the repo
-    chat_format: str          # llama-cpp-python chat_format string
+    chat_format: Optional[str]  # None uses the GGUF's own chat template
     n_ctx: int = 4096         # default context window
     description: str = ""
     family: str = ""
@@ -34,6 +38,8 @@ class ModelEntry:
     size_bytes: int = 0       # approximate file size
     supports_vision: bool = False
     extra_kwargs: dict = field(default_factory=dict)
+    hf_revision: Optional[str] = None
+    sha256: Optional[str] = None
 
     @property
     def local_path(self) -> Path:
@@ -43,38 +49,12 @@ class ModelEntry:
 
     @property
     def is_downloaded(self) -> bool:
-        return self.local_path.exists()
+        return self.local_path.is_file()
 
 
 # ── Model definitions ─────────────────────────────────────────────────
 
 MODELS: list[ModelEntry] = [
-    ModelEntry(
-        tag="llama3:8b",
-        display_name="Llama 3 8B",
-        hf_repo="bartowski/Meta-Llama-3-8B-Instruct-GGUF",
-        hf_filename="Meta-Llama-3-8B-Instruct-Q4_K_M.gguf",
-        chat_format="llama-3",
-        n_ctx=8192,
-        description="Chat / Edit",
-        family="llama",
-        parameter_size="8B",
-        quantization="Q4_K_M",
-        size_bytes=4_920_000_000,
-    ),
-    ModelEntry(
-        tag="qwen2.5:7b",
-        display_name="Qwen 2.5 7B",
-        hf_repo="bartowski/Qwen2.5-7B-Instruct-GGUF",
-        hf_filename="Qwen2.5-7B-Instruct-Q4_K_M.gguf",
-        chat_format="chatml",
-        n_ctx=8192,
-        description="Balanced chat",
-        family="qwen2",
-        parameter_size="7B",
-        quantization="Q4_K_M",
-        size_bytes=4_680_000_000,
-    ),
     ModelEntry(
         tag="deepseek-r1:8b",
         display_name="DeepSeek R1 8B",
@@ -82,64 +62,41 @@ MODELS: list[ModelEntry] = [
         hf_filename="DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf",
         chat_format="llama-3",
         n_ctx=8192,
-        description="Advanced reasoning",
+        description="Proposal decomposition and reasoning",
         family="deepseek",
         parameter_size="8B",
         quantization="Q4_K_M",
-        size_bytes=4_940_000_000,
+        size_bytes=4_920_736_608,
     ),
     ModelEntry(
-        tag="phi3:latest",
-        display_name="Phi-3 Mini",
-        hf_repo="bartowski/Phi-3.1-mini-4k-instruct-GGUF",
-        hf_filename="Phi-3.1-mini-4k-instruct-Q4_K_M.gguf",
-        chat_format="chatml",
+        tag="qwen3.5:2b",
+        display_name="Qwen3.5 2B",
+        hf_repo="bartowski/Qwen_Qwen3.5-2B-GGUF",
+        hf_filename="Qwen_Qwen3.5-2B-Q4_K_M.gguf",
+        chat_format=None,
         n_ctx=4096,
-        description="Fast responses",
-        family="phi3",
-        parameter_size="3.8B",
+        description="Lightweight eFlow tutorial candidate",
+        family="qwen3.5",
+        parameter_size="2B",
         quantization="Q4_K_M",
-        size_bytes=2_390_000_000,
+        size_bytes=1_396_198_496,
+        hf_revision="7d26695454df6de5fbcce2e58681e62dae06ce43",
+        sha256="57a1085840f497d764a7fc5d346922dbde961efb54cc792ea81d694fd846a1d8",
     ),
     ModelEntry(
-        tag="qwen2.5-coder:1.5b",
-        display_name="Qwen2.5-Coder 1.5B",
-        hf_repo="Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF",
-        hf_filename="qwen2.5-coder-1.5b-instruct-q4_k_m.gguf",
-        chat_format="chatml",
+        tag="qwen3.5:4b",
+        display_name="Qwen3.5 4B",
+        hf_repo="lmstudio-community/Qwen3.5-4B-GGUF",
+        hf_filename="Qwen3.5-4B-Q4_K_M.gguf",
+        chat_format=None,
         n_ctx=4096,
-        description="Autocomplete / Code",
-        family="qwen2",
-        parameter_size="1.5B",
+        description="Higher-capacity eFlow tutorial candidate",
+        family="qwen3.5",
+        parameter_size="4B",
         quantization="Q4_K_M",
-        size_bytes=1_100_000_000,
-    ),
-    ModelEntry(
-        tag="gemma3:12b",
-        display_name="Gemma 3 12B",
-        hf_repo="bartowski/google_gemma-3-12b-it-GGUF",
-        hf_filename="google_gemma-3-12b-it-Q4_K_M.gguf",
-        chat_format="gemma",
-        n_ctx=8192,
-        description="Strong reasoning",
-        family="gemma",
-        parameter_size="12B",
-        quantization="Q4_K_M",
-        size_bytes=7_330_000_000,
-        supports_vision=False,  # vision needs multimodal projector, text-only for now
-    ),
-    ModelEntry(
-        tag="nomic-embed-text:latest",
-        display_name="Nomic Embed Text",
-        hf_repo="nomic-ai/nomic-embed-text-v1.5-GGUF",
-        hf_filename="nomic-embed-text-v1.5.Q4_K_M.gguf",
-        chat_format="",  # embedding model, not used for chat
-        n_ctx=2048,
-        description="Text embeddings",
-        family="nomic",
-        parameter_size="137M",
-        quantization="Q4_K_M",
-        size_bytes=86_000_000,
+        size_bytes=2_707_513_696,
+        hf_revision="f9f88ac3e234be915e23811a6d28ea287bdb927e",
+        sha256="25082a7dd3776cc3c741c6347d3bd04523f05796607b3fbc32fa3a25dfa1418c",
     ),
 ]
 
@@ -157,7 +114,7 @@ def list_all_models() -> list[ModelEntry]:
     return list(MODELS)
 
 
-def download_model(entry: ModelEntry, force: bool = False) -> Path:
+def download_model(entry: ModelEntry, force: bool = False, *, use_http: bool = False) -> Path:
     """
     Download a model's GGUF file from HuggingFace if not already present.
     Returns the local file path.
@@ -170,19 +127,38 @@ def download_model(entry: ModelEntry, force: bool = False) -> Path:
 
     logger.info(f"Downloading {entry.display_name} from {entry.hf_repo}/{entry.hf_filename} ...")
 
-    downloaded_path = hf_hub_download(
-        repo_id=entry.hf_repo,
-        filename=entry.hf_filename,
-        local_dir=str(MODELS_DIR),
-        local_dir_use_symlinks=False,
-    )
+    if use_http:
+        curl = shutil.which("curl.exe" if os.name == "nt" else "curl")
+        if not curl:
+            raise RuntimeError("Direct HTTP download requires curl on PATH")
+        downloaded_path = entry.local_path.with_suffix(".gguf.download")
+        url = hf_hub_url(entry.hf_repo, entry.hf_filename, revision=entry.hf_revision)
+        subprocess.run(
+            [curl, "--location", "--fail", "--retry", "2", "--connect-timeout", "15",
+             "--max-time", "1800", "--silent", "--show-error",
+             "--output", str(downloaded_path),
+             url + f"?download=true&nocache={time.time_ns()}"],
+            check=True, timeout=1900,
+        )
+    else:
+        downloaded_path = hf_hub_download(
+            repo_id=entry.hf_repo,
+            filename=entry.hf_filename,
+            revision=entry.hf_revision,
+            local_dir=str(MODELS_DIR),
+        )
 
     # Rename to our standard name if needed
     dl = Path(downloaded_path)
+    if entry.sha256:
+        with dl.open("rb") as model_file:
+            digest = hashlib.sha256()
+            for chunk in iter(lambda: model_file.read(8 * 1024 * 1024), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != entry.sha256:
+            raise RuntimeError(f"Checksum mismatch for {entry.tag}; model was not installed")
     if dl != entry.local_path:
-        if entry.local_path.exists():
-            entry.local_path.unlink()
-        dl.rename(entry.local_path)
+        dl.replace(entry.local_path)
 
     logger.info(f"Downloaded {entry.display_name} → {entry.local_path}")
     return entry.local_path

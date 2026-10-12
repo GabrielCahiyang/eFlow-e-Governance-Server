@@ -9,11 +9,13 @@
     "restart": "powershell -ExecutionPolicy Bypass -File scripts/restart-ai.ps1",
     "dev:frontend": "vite --port 5175 --strictPort",
     "dev:backend": "python server/start.py",
-    "dev:frontend-only": "vite"
+    "dev:frontend-only": "vite",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
+    "@fontsource-variable/figtree": "5.3.0",
     "@mui/icons-material": "7.3.5",
     "@mui/material": "7.3.5",
     "@popperjs/core": "2.11.8",
@@ -43,6 +45,10 @@
     "@radix-ui/react-toggle": "1.1.2",
     "@radix-ui/react-toggle-group": "1.1.2",
     "@radix-ui/react-tooltip": "1.1.8",
+    "@vibe/button": "4.0.14",
+    "@vibe/core": "4.5.35",
+    "@vibe/text-inputs": "4.0.7",
+    "@vibe/toggle": "4.0.10",
     "canvas-confetti": "1.9.4",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
@@ -72,9 +78,13 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.1.12",
+    "@types/react": "18.3.26",
+    "@types/react-dom": "18.3.7",
     "@vitejs/plugin-react": "4.7.0",
     "concurrently": "^9.2.1",
+    "prettier": "3.6.2",
     "tailwindcss": "4.1.12",
+    "typescript": "5.9.3",
     "vite": "6.3.5"
   },
   "peerDependencies": {

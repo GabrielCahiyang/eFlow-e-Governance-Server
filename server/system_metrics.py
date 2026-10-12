@@ -6,10 +6,17 @@ import csv
 import os
 import subprocess
 import time
+import threading
 from io import StringIO
 from typing import Any
 
 import psutil
+
+_cache = None
+_cache_key = None
+_cache_time = 0.0
+_lock = threading.Lock()
+_processes = {os.getpid(): psutil.Process()}
 
 
 _GPU_QUERY = (
@@ -79,11 +86,36 @@ def _read_gpus() -> list[dict[str, Any]]:
     return gpus
 
 
-def read_system_metrics(started_at: float) -> dict[str, Any]:
+def read_system_metrics(started_at: float, worker_pid: int | None = None) -> dict[str, Any]:
+    global _cache, _cache_key, _cache_time
+    with _lock:
+        key = (started_at, worker_pid)
+        if _cache is not None and key == _cache_key and time.monotonic() - _cache_time < 2.5:
+            return _cache
+        _cache = _capture_metrics(started_at, worker_pid)
+        _cache_key = key
+        _cache_time = time.monotonic()
+        return _cache
+
+
+def _capture_metrics(started_at, worker_pid):
     """Return a serializable snapshot without inventing unavailable values."""
     memory = psutil.virtual_memory()
-    process = psutil.Process()
-    process_memory = process.memory_info().rss / (1024 * 1024)
+    for pid in list(_processes):
+        if pid not in {os.getpid(), worker_pid}:
+            _processes.pop(pid)
+    if worker_pid and worker_pid not in _processes:
+        try:
+            _processes[worker_pid] = psutil.Process(worker_pid)
+        except psutil.Error:
+            pass
+    process_memory = process_cpu = 0.0
+    for process in list(_processes.values()):
+        try:
+            process_memory += process.memory_info().rss / (1024 * 1024)
+            process_cpu += process.cpu_percent(interval=None)
+        except psutil.Error:
+            pass
     gpus = _read_gpus()
     return {
         "captured_at": time.time(),
@@ -95,7 +127,7 @@ def read_system_metrics(started_at: float) -> dict[str, Any]:
             "memory_total_gb": round(memory.total / (1024**3), 1),
         },
         "process": {
-            "cpu_percent": round(process.cpu_percent(interval=None), 1),
+            "cpu_percent": round(process_cpu, 1),
             "memory_mb": round(process_memory, 1),
         },
         "gpu_available": bool(gpus),

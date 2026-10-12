@@ -15,6 +15,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from service_monitor import monitored_service
 
 logger = logging.getLogger("eflow.laya")
 
@@ -551,6 +552,7 @@ def match_personnel(
 
 # ─── Top-Level Enrichment Pipeline ─────────────────────────────────────
 
+@monitored_service("laya", "routing_and_review")
 def enrich_task_with_laya(
     task: dict[str, Any],
     context_title: str,

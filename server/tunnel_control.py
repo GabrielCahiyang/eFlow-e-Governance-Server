@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import aiohttp
+from http_client import get_session, close_session
 
 
 ROTATION_REQUEST_PATH = Path(__file__).resolve().parent / ".tunnel-rotate.request"
@@ -55,18 +56,18 @@ async def read_tunnel_state(
         "Authorization": f"Bearer {service_role_key}",
     }
     url = f"{supabase_url.rstrip('/')}/rest/v1/system_config?{query}"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
-            url,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=8),
-        ) as response:
-            if response.status != 200:
-                detail = (await response.text())[:240]
-                raise RuntimeError(
-                    f"Supabase tunnel-state read failed ({response.status}): {detail}"
-                )
-            rows = await response.json()
+    session = await get_session()
+    async with session.get(
+        url,
+        headers=headers,
+        timeout=aiohttp.ClientTimeout(total=8),
+    ) as response:
+        if response.status != 200:
+            detail = (await response.text())[:240]
+            raise RuntimeError(
+                f"Supabase tunnel-state read failed ({response.status}): {detail}"
+            )
+        rows = await response.json()
 
     values = {row.get("key"): row.get("value") for row in rows}
     updates = {row.get("key"): row.get("updated_at") for row in rows}

@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
+from service_monitor import update_current
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -145,10 +146,14 @@ def _send_anchor_tx(
         tx_hash_hex = tx_hash.hex()
         if not tx_hash_hex.startswith("0x"):
             tx_hash_hex = f"0x{tx_hash_hex}"
+        update_current({"tx_hash": tx_hash_hex, "document_hash": document_hash, "chain_id": POLYGON_CHAIN_ID})
 
         # Wait for one confirmation (max 30s)
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=30)
         block_number = receipt.get("blockNumber")
+        update_current({"block_number": block_number})
+        if receipt.get("status") != 1:
+            raise RuntimeError("The anchor transaction was mined but reverted.")
 
         logger.info(
             f"[Polygon] Anchored {document_hash[:20]}... "

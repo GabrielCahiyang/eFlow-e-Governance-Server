@@ -12,15 +12,17 @@ from __future__ import annotations
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
 
 import aiohttp
+from http_client import get_session, close_session
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from workspace_gateway_context import checked_workspace_payload
 from staffing_gateway_context import checked_staffing_payload
@@ -79,6 +81,7 @@ class ChatRequest(BaseModel):
     model: str = Field(min_length=1, max_length=200)
     messages: list[ChatMessage] = Field(min_length=1, max_length=200)
     stream: bool = False
+    max_tokens: int | None = Field(default=None, ge=1, le=4096)
     request_id: str | None = Field(default=None, min_length=1, max_length=100)
     workspace_decomposition: WorkspaceDecompositionRequest | None = None
     workspace_staffing: WorkspaceStaffingRequest | None = None
@@ -108,20 +111,19 @@ class InternalAiKeyCache:
         headers = _service_headers()
         params = {"key": "eq.llm_auth_key", "select": "value"}
         try:
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=8)
-            ) as session:
-                async with session.get(
-                    f"{SUPABASE_URL}/rest/v1/app_config",
-                    params=params,
-                    headers=headers,
-                ) as response:
-                    if response.status != 200:
-                        detail = (await response.text())[:240]
-                        raise RuntimeError(
-                            f"Could not read the private AI key ({response.status}): {detail}"
-                        )
-                    rows = await response.json()
+            session = await get_session()
+            async with session.get(
+                f"{SUPABASE_URL}/rest/v1/app_config",
+                params=params,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as response:
+                if response.status != 200:
+                    detail = (await response.text())[:240]
+                    raise RuntimeError(
+                        f"Could not read the private AI key ({response.status}): {detail}"
+                    )
+                rows = await response.json()
         except (aiohttp.ClientError, TimeoutError) as exc:
             if self._value:
                 logger.warning("Using the cached private AI key after a Supabase error")
@@ -162,42 +164,42 @@ async def _require_active_user(request: Request) -> str:
     """Validate the bearer token with Supabase and require an active profile."""
     token = _bearer_token(request)
     try:
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=10)
-        ) as session:
-            async with session.get(
-                f"{SUPABASE_URL}/auth/v1/user",
-                headers={
-                    "apikey": SUPABASE_SERVICE_ROLE_KEY,
-                    "Authorization": f"Bearer {token}",
-                },
-            ) as response:
-                if response.status != 200:
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid or expired Supabase session.",
-                    )
-                auth_user: dict[str, Any] = await response.json()
-
-            user_id = str(auth_user.get("id") or "").strip()
-            if not user_id:
+        session = await get_session()
+        async with session.get(
+            f"{SUPABASE_URL}/auth/v1/user",
+            headers={
+                "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                "Authorization": f"Bearer {token}",
+            },
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as response:
+            if response.status != 200:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid or expired Supabase session.",
                 )
+            auth_user: dict[str, Any] = await response.json()
 
-            async with session.get(
-                f"{SUPABASE_URL}/rest/v1/profiles",
-                params={"select": "id,is_active", "id": f"eq.{user_id}"},
-                headers=_service_headers(),
-            ) as response:
-                if response.status != 200:
-                    raise HTTPException(
-                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                        detail="The eFlow account could not be verified.",
-                    )
-                profiles = await response.json()
-    except aiohttp.ClientError as exc:
+        user_id = str(auth_user.get("id") or "").strip()
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired Supabase session.",
+            )
+
+        async with session.get(
+            f"{SUPABASE_URL}/rest/v1/profiles",
+            params={"select": "id,is_active", "id": f"eq.{user_id}"},
+            headers=_service_headers(),
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as response:
+            if response.status != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="The eFlow account could not be verified.",
+                )
+            profiles = await response.json()
+    except (aiohttp.ClientError, TimeoutError) as exc:
         logger.warning("Supabase user validation failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -236,42 +238,50 @@ async def _proxy_ai_request(
     user_id = await _require_active_user(request)
     try:
         key = await internal_ai_key.get()
-        async with aiohttp.ClientSession(
+        session = await get_session()
+        if payload and payload.get('workspace_staffing') is not None:
+            async def read_context(task_id):
+                return await _read_staffing_context(session, request, task_id)
+            payload = await checked_staffing_payload(payload, read_context)
+        if payload and payload.get('workspace_decomposition'):
+            async def read_rows(table: str, params: dict) -> list:
+                async with session.get(
+                    f'{SUPABASE_URL}/rest/v1/{table}', params=params,
+                    headers=_service_headers(),
+                ) as response:
+                    if response.status != 200:
+                        raise HTTPException(status_code=503, detail='Project context could not be verified.')
+                    rows = await response.json()
+                    if not isinstance(rows, list):
+                        raise HTTPException(status_code=503, detail='Project context could not be verified.')
+                    return rows
+            payload = await checked_workspace_payload(payload, user_id, read_rows)
+        upstream = await session.request(
+            method,
+            f"{INTERNAL_AI_BASE_URL}/{path.lstrip('/')}",
+            json=payload,
+            headers={"Authorization": f"Bearer {key}", "X-eFlow-User-Id": user_id},
             timeout=aiohttp.ClientTimeout(total=timeout_seconds, connect=10),
-        ) as session:
-            if payload and payload.get('workspace_staffing') is not None:
-                async def read_context(task_id):
-                    return await _read_staffing_context(session, request, task_id)
-                payload = await checked_staffing_payload(payload, read_context)
-            if payload and payload.get('workspace_decomposition'):
-                async def read_rows(table: str, params: dict) -> list:
-                    async with session.get(
-                        f'{SUPABASE_URL}/rest/v1/{table}', params=params,
-                        headers=_service_headers(),
-                    ) as response:
-                        if response.status != 200:
-                            raise HTTPException(status_code=503, detail='Project context could not be verified.')
-                        rows = await response.json()
-                        if not isinstance(rows, list):
-                            raise HTTPException(status_code=503, detail='Project context could not be verified.')
-                        return rows
-                payload = await checked_workspace_payload(payload, user_id, read_rows)
-            async with session.request(
-                method,
-                f"{INTERNAL_AI_BASE_URL}/{path.lstrip('/')}",
-                json=payload,
-                headers={
-                    "Authorization": f"Bearer {key}",
-                    "X-eFlow-User-Id": user_id,
-                },
-            ) as upstream:
-                content = await upstream.read()
-                content_type = upstream.headers.get("content-type", "application/json")
-                return Response(
-                    content=content,
-                    status_code=upstream.status,
-                    media_type=content_type.split(";", 1)[0],
-                )
+        )
+        content_type = upstream.headers.get("content-type", "application/json").split(";", 1)[0]
+        response_headers = ({"Retry-After": upstream.headers["Retry-After"]}
+                            if "Retry-After" in upstream.headers else {})
+        if payload and payload.get('stream') and upstream.status < 400:
+            async def forward_stream():
+                try:
+                    async for chunk in upstream.content.iter_any():
+                        yield chunk
+                finally:
+                    # Closing upstream also cancels the owner-scoped native job.
+                    upstream.close()
+            return StreamingResponse(forward_stream(), status_code=upstream.status,
+                                     media_type=content_type, headers=response_headers)
+        try:
+            content = await upstream.read()
+            return Response(content=content, status_code=upstream.status,
+                            media_type=content_type, headers=response_headers)
+        finally:
+            upstream.release()
     except HTTPException:
         raise
     except (aiohttp.ClientError, TimeoutError) as exc:
@@ -288,7 +298,13 @@ async def _proxy_ai_request(
         ) from exc
 
 
-app = FastAPI(title="eFlow Embedded AI Gateway")
+@asynccontextmanager
+async def lifespan(app):
+    yield
+    await close_session()
+
+
+app = FastAPI(title="eFlow Embedded AI Gateway", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins(),
@@ -307,8 +323,8 @@ async def health() -> dict[str, str]:
 async def staffing_context(task_id: UUID, request: Request):
     await _require_active_user(request)
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30,connect=10)) as session:
-            return await _read_staffing_context(session,request,str(task_id))
+        session = await get_session()
+        return await _read_staffing_context(session,request,str(task_id))
     except (aiohttp.ClientError,TimeoutError) as exc:
         raise HTTPException(503,'The application staffing service is offline.') from exc
 
@@ -331,6 +347,11 @@ async def enqueue_job(payload: ChatRequest, request: Request) -> Response:
 @app.get("/controlpanelEflow/api/ai/jobs/{job_id}")
 async def get_job(job_id: str, request: Request) -> Response:
     return await _proxy_ai_request("GET", f"jobs/{job_id}", request)
+
+
+@app.delete("/controlpanelEflow/api/ai/jobs/{job_id}")
+async def cancel_job(job_id: str, request: Request) -> Response:
+    return await _proxy_ai_request("DELETE", f"jobs/{job_id}", request)
 
 
 @app.post("/controlpanelEflow/api/ai/chat")

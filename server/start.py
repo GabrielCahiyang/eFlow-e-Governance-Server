@@ -39,6 +39,12 @@ if sys.platform == "win32":
 SERVER_DIR = Path(__file__).parent.resolve()
 VENV_DIR = SERVER_DIR / ".venv"
 REQUIREMENTS = SERVER_DIR / "requirements.txt"
+LLAMA_CPP_VERSION = "0.3.36"
+WINDOWS_CUDA_WHEEL = (
+    "https://github.com/abetlen/llama-cpp-python/releases/download/"
+    f"v{LLAMA_CPP_VERSION}-cu124/"
+    f"llama_cpp_python-{LLAMA_CPP_VERSION}-py3-none-win_amd64.whl"
+)
 
 # The launcher and its child services use this local project configuration.
 # Override empty values inherited from a frontend or restart shell.
@@ -112,11 +118,21 @@ def setup_venv():
     # Trust the marker only after verifying dependencies added in later updates.
     marker = VENV_DIR / ".deps_installed"
     if marker.exists():
+        dependency_probe = (
+            "import aiohttp, dotenv, fastapi, psutil, uvicorn; "
+            "from importlib.metadata import version; "
+            f"assert version('llama-cpp-python') == '{LLAMA_CPP_VERSION}'; "
+        )
+        if IS_WINDOWS:
+            dependency_probe += (
+                "from llama_cpp import llama_supports_gpu_offload; "
+                "assert llama_supports_gpu_offload()"
+            )
         dependency_check = subprocess.run(
             [
                 str(PYTHON_BIN),
                 "-c",
-                "import aiohttp, dotenv, fastapi, psutil, uvicorn",
+                dependency_probe,
             ],
             capture_output=True,
             text=True,
@@ -135,23 +151,22 @@ def setup_venv():
         capture_output=True,
     )
 
-    # Install llama-cpp-python from prebuilt wheels (avoids C++ compilation)
-    print("  -> Installing llama-cpp-python (prebuilt wheel) ...")
+    # Keep the Windows host on a Qwen3.5-capable CUDA 12.4 wheel with Pascal
+    # support. A generic PyPI/CPU install can silently remove GPU acceleration.
+    print("  -> Installing llama-cpp-python (CUDA on Windows) ...")
     result = subprocess.run(
         [
             str(PYTHON_BIN), "-m", "pip", "install",
-            "llama-cpp-python>=0.3.0",
-            "--extra-index-url", "https://abetlen.github.io/llama-cpp-python/whl/cpu",
-            "--prefer-binary",
+            WINDOWS_CUDA_WHEEL if IS_WINDOWS else f"llama-cpp-python=={LLAMA_CPP_VERSION}",
+            "--force-reinstall", "--no-deps",
         ],
         capture_output=True, text=True,
     )
     if result.returncode != 0:
-        # Fallback: try normal install (will compile from source)
-        print("  [WARN] Prebuilt wheel not found, compiling from source (this may take a few minutes) ...")
-        subprocess.run(
-            [str(PYTHON_BIN), "-m", "pip", "install", "llama-cpp-python>=0.3.0"],
-            check=True,
+        raise RuntimeError(
+            "The inference runtime could not be installed. "
+            "Check the download connection or build a CUDA wheel with server/build_cuda.bat. "
+            "Setup will not silently fall back to CPU.\n" + result.stderr[-2000:]
         )
 
     # Install remaining dependencies
@@ -196,7 +211,7 @@ def supervise_services() -> int:
     print(f"[INFO]  Models directory: {SERVER_DIR.parent / 'models'}\n")
 
     commands = {
-        "AI server": [str(PYTHON_BIN), str(SERVER_DIR / "main.py")],
+        "AI server": [str(PYTHON_BIN), str(SERVER_DIR / "run_api.py")],
     }
     gateway_mode = _gateway_mode()
     external_gateway_is_ready = _gateway_is_healthy()

@@ -15,7 +15,7 @@ echo.
 echo [OK] VS2022 + CUDA 12.6 environment ready (GTX 1070 = SM 6.1)
 echo.
 
-"%~dp0.venv\Scripts\python.exe" -m pip install "llama-cpp-python==0.3.19" --force-reinstall --no-cache-dir
+"%~dp0.venv\Scripts\python.exe" -m pip install "llama-cpp-python==0.3.36" --force-reinstall --no-cache-dir --no-deps
 
 if errorlevel 1 (
     echo [FAIL] Build failed

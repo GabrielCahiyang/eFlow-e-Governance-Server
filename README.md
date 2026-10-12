@@ -27,8 +27,8 @@ The tunnel and gateway remain available for eFlow Admin/control operations while
 - **Automatic Quick Tunnel Publishing**: Rotating Cloudflare URLs, runtime status, messages, and heartbeats are written directly to Supabase.
 - **Dashboard Tunnel Control**: View, copy, and intentionally rotate the active Quick Tunnel; the supervisor publishes the replacement to Supabase automatically.
 - **Clean AI Restart**: `npm run restart` removes stale AI API, dashboard, queue, supervisor, and matching tunnel processes before starting one clean stack.
-- **Live Server Logs**: Real-time terminal-style server logging via SSE (Server-Sent Events) for instant debugging and monitoring.
-- **eFlow Operations UI**: A light, governance-focused console aligned with the main eFlow visual language, plus a focused dark live-log surface.
+- **Live Server Logs**: Readable live activity logging via SSE (Server-Sent Events) for instant debugging and monitoring.
+- **eFlow Operations UI**: A Monday Vibe operations console with Overview, AI models, Request queue, Activity log, and Connection settings.
 
 ---
 
@@ -57,7 +57,7 @@ This is the primary endpoint to interact with the active models. Only models tha
 **Request Body (JSON):**
 ```json
 {
-  "model": "llama3:8b",
+  "model": "deepseek-r1:8b",
   "messages": [
     { "role": "system", "content": "You are a helpful coding assistant." },
     { "role": "user", "content": "Write a python script to reverse a string." }
@@ -173,70 +173,63 @@ Anchors municipal lifecycle events onto the Polygon Amoy Testnet (Chain ID `8000
 - **8 GB+ RAM** — 16 GB recommended for larger models
 - **NVIDIA GPU** — See GPU & CUDA section below before installing
 
-### Included Models (auto-downloaded on first use)
+### Included Models
 
-| Model | Size | Purpose |
-|-------|------|---------|
-| Llama 3 8B | ~4.7 GB | General chat |
-| DeepSeek R1 8B | ~4.9 GB | Advanced reasoning |
-| Qwen 2.5 7B | ~4.4 GB | Balanced chat |
-| Phi-3 Mini | ~2.2 GB | Fast responses |
-| Qwen 2.5 Coder 1.5B | ~1.1 GB | Code autocomplete |
-| Gemma 3 12B | ~7.3 GB | Strong reasoning |
-| Nomic Embed Text | ~86 MB | Text embeddings |
+Only these three text models are registered. Files on disk are not all loaded:
+the current server loads one GGUF on demand and reuses it until another model is requested.
+LAYA remains a separate, lazily loaded decision model on CPU.
+
+| Model | API tag | Q4_K_M file size | Purpose |
+|-------|---------|-----------------|---------|
+| DeepSeek R1 8B | `deepseek-r1:8b` | 4.92 GB | Existing proposal decomposition and reasoning |
+| Qwen3.5 2B | `qwen3.5:2b` | 1.40 GB | Lightweight tutorial candidate |
+| Qwen3.5 4B | `qwen3.5:4b` | 2.71 GB | Higher-capacity tutorial candidate |
+
+The Qwen models use their embedded GGUF chat templates and a 4,096-token context
+for initial resource budgeting. This installation is text-only; vision projectors,
+speech recognition, and text-to-speech models are not downloaded.
+
+Qwen GGUF sources are pinned to verified revisions of
+[bartowski's 2B conversion](https://huggingface.co/bartowski/Qwen_Qwen3.5-2B-GGUF)
+and [LM Studio's 4B conversion](https://huggingface.co/lmstudio-community/Qwen3.5-4B-GGUF).
+The downloader checks each new Qwen file's SHA-256 before installing it.
+
+The tutorial service and its documentation grounding are still to be built.
+The intended admission limits are up to two tutorial requests and one decomposition
+request; these are planned limits, not current parallel-generation guarantees.
+The current FIFO worker still executes one job at a time. Concurrent execution
+requires a shared resource scheduler and GPU measurements first.
 
 ---
 
 ## Manual Model Download
 
-Models are downloaded automatically on first use, but if you want to pre-download them all manually into the `models/` folder, run the following commands from your project root.
-
-> Your project root is the folder that contains the `models/` directory, e.g.:
-> `PS C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration>`
-
-First install the HuggingFace CLI if you don't have it:
-```powershell
-server\.venv\Scripts\pip.exe install huggingface-hub
-```
-
-Then run each command to download the models directly into the `models/` folder:
+From the project root, use the registry-backed downloader. It fetches only missing
+files, verifies the new Qwen downloads, and uses the filenames expected by the API:
 
 ```powershell
-# DeepSeek R1 8B (~4.9 GB)
-server\.venv\Scripts\python.exe -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='bartowski/DeepSeek-R1-Distill-Llama-8B-GGUF', filename='DeepSeek-R1-Distill-Llama-8B-Q4_K_M.gguf', local_dir='models', local_dir_use_symlinks=False)"
-
-# Llama 3 8B (~4.7 GB)
-server\.venv\Scripts\python.exe -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='bartowski/Meta-Llama-3-8B-Instruct-GGUF', filename='Meta-Llama-3-8B-Instruct-Q4_K_M.gguf', local_dir='models', local_dir_use_symlinks=False)"
-
-# Qwen 2.5 7B (~4.4 GB)
-server\.venv\Scripts\python.exe -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='bartowski/Qwen2.5-7B-Instruct-GGUF', filename='Qwen2.5-7B-Instruct-Q4_K_M.gguf', local_dir='models', local_dir_use_symlinks=False)"
-
-# Phi-3 Mini (~2.2 GB)
-server\.venv\Scripts\python.exe -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='bartowski/Phi-3.1-mini-4k-instruct-GGUF', filename='Phi-3.1-mini-4k-instruct-Q4_K_M.gguf', local_dir='models', local_dir_use_symlinks=False)"
-
-# Qwen 2.5 Coder 1.5B (~1.1 GB)
-server\.venv\Scripts\python.exe -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF', filename='qwen2.5-coder-1.5b-instruct-q4_k_m.gguf', local_dir='models', local_dir_use_symlinks=False)"
-
-# Gemma 3 12B (~7.3 GB)
-server\.venv\Scripts\python.exe -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='bartowski/google_gemma-3-12b-it-GGUF', filename='google_gemma-3-12b-it-Q4_K_M.gguf', local_dir='models', local_dir_use_symlinks=False)"
-
-# Nomic Embed Text (~86 MB)
-server\.venv\Scripts\python.exe -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='nomic-ai/nomic-embed-text-v1.5-GGUF', filename='nomic-embed-text-v1.5.Q4_K_M.gguf', local_dir='models', local_dir_use_symlinks=False)"
+& server\.venv\Scripts\python.exe server/download_all.py
 ```
 
-After downloading, your `models/` folder should look like this:
+If the Hugging Face transfer client stalls, use the direct HTTP fallback. It
+uses the same pinned sources and checksum checks:
+
+```powershell
+& server\.venv\Scripts\python.exe server/download_all.py --http
 ```
+
+The resulting folder contains:
+
+```text
 models/
-├── deepseek-r1_8b.gguf
-├── llama3_8b.gguf
-├── qwen2.5_7b.gguf
-├── phi3_latest.gguf
-├── qwen2.5-coder_1.5b.gguf
-├── gemma3_12b.gguf
-└── nomic-embed-text_latest.gguf
+  deepseek-r1_8b.gguf
+  qwen3.5_2b.gguf
+  qwen3.5_4b.gguf
+  .cache/                # Hugging Face download metadata
 ```
 
-> Note: After downloading, the files may be named differently from what the backend expects. The backend automatically renames them on first use — or you can manually rename them to match the filenames above.
+Downloads can also happen on first use. Downloading a file does not load it into
+GPU memory; the dashboard labels files as downloaded rather than ready for inference.
 
 ---
 
@@ -330,15 +323,16 @@ Open PowerShell **as Administrator**, navigate to your project folder, and run:
 cd "C:\path\to\your\project"
 
 # For CUDA 12.4 (GTX 10xx / RTX 20xx / RTX 30xx)
-server\.venv\Scripts\pip.exe install https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.4-cu124/llama_cpp_python-0.3.4-cp312-cp312-win_amd64.whl --force-reinstall --no-cache-dir
+server\.venv\Scripts\pip.exe install https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.36-cu124/llama_cpp_python-0.3.36-py3-none-win_amd64.whl --force-reinstall --no-cache-dir
 
-# For CUDA 12.6 (RTX 40xx and newer) — replace cu124 with cu126 in the URL
+# This pinned CUDA 12.4 wheel also supports Pascal (GTX 10xx).
 ```
-### Step 7 — Update If available
+### Step 7 — Keep the tested runtime pinned
 
-```powershell
-server\.venv\Scripts\python.exe -m pip install llama-cpp-python --upgrade --force-reinstall --no-cache-dir
-```
+The backend pins `llama-cpp-python==0.3.36` for Qwen3.5 support. On Windows,
+`server/start.py` installs the CUDA 12.4 wheel with Pascal support rather than
+silently falling back to a CPU wheel. Avoid replacing it with a generic PyPI upgrade.
+`server/build_cuda.bat` is the alternative CUDA 12.6 source build for this laptop.
 
 ### Step 8 — Verify GPU is Active
 
@@ -346,7 +340,7 @@ server\.venv\Scripts\python.exe -m pip install llama-cpp-python --upgrade --forc
 server\.venv\Scripts\python.exe -c "from llama_cpp import llama_supports_gpu_offload; print(llama_supports_gpu_offload())"
 ```
 
-If it prints `True` — GPU acceleration is active and all model layers will be offloaded to VRAM.
+If it prints `True`, the runtime supports GPU offloading. Check actual memory allocation and generation when loading a model.
 
 If it prints `False` — the CPU wheel was installed. Repeat Step 6 and make sure your CUDA PATH is correct.
 
@@ -596,15 +590,11 @@ For an offline demo or mock run, set `POLYGON_MODE=simulation` or construct the 
 
 ## VRAM Requirements
 
-| Model | VRAM Required | Fits in 8GB? |
-|---|---|---|
-| Phi-3 Mini 3.8B Q4 | ~2.2 GB | Yes |
-| Qwen 2.5 7B Q4 | ~4.4 GB | Yes |
-| Llama 3 8B Q4 | ~4.7 GB | Yes |
-| DeepSeek R1 8B Q4 | ~4.9 GB | Yes |
-| Gemma 3 12B Q4 | ~7.3 GB | Tight |
-
-> Only one model is loaded into VRAM at a time. The system automatically unloads the previous model before loading a new one.
+GGUF file sizes are weight-storage sizes, not total VRAM requirements. Context
+caches, compute buffers, and Windows graphics add memory use. The GTX 1070 Max-Q
+has 8 GB VRAM; measure actual use before keeping DeepSeek and a Qwen model resident
+together or enabling concurrent generation. Two tutorial users can share one model
+with separate histories and queued turns. The current manager loads one GGUF at a time.
 
 ---
 
@@ -643,7 +633,7 @@ A collection of every real issue encountered during development and their exact 
 **Fix**: Install the pre-built CUDA wheel directly from GitHub releases — do NOT use `--extra-index-url` as it often falls back to the CPU build silently:
 
 ```powershell
-server\.venv\Scripts\pip.exe install https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.4-cu124/llama_cpp_python-0.3.4-cp312-cp312-win_amd64.whl --force-reinstall --no-cache-dir
+server\.venv\Scripts\pip.exe install https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.36-cu124/llama_cpp_python-0.3.36-py3-none-win_amd64.whl --force-reinstall --no-cache-dir
 ```
 
 Then verify:
@@ -736,7 +726,7 @@ cd "C:\path\to\your\project"
 **Fix**: Press `Ctrl+C` to kill it. Instead of compiling from source, use the pre-built wheel directly — it installs in under a minute and requires no compilation:
 
 ```powershell
-server\.venv\Scripts\pip.exe install https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.4-cu124/llama_cpp_python-0.3.4-cp312-cp312-win_amd64.whl --force-reinstall --no-cache-dir
+server\.venv\Scripts\pip.exe install https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.36-cu124/llama_cpp_python-0.3.36-py3-none-win_amd64.whl --force-reinstall --no-cache-dir
 ```
 
 ---
@@ -787,10 +777,10 @@ Both need to be true for GPU to actually be used.
 **Fix**: Skip the index entirely and install the wheel directly by URL:
 
 ```powershell
-server\.venv\Scripts\pip.exe install https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.4-cu124/llama_cpp_python-0.3.4-cp312-cp312-win_amd64.whl --force-reinstall --no-cache-dir
+server\.venv\Scripts\pip.exe install https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.36-cu124/llama_cpp_python-0.3.36-py3-none-win_amd64.whl --force-reinstall --no-cache-dir
 ```
 
-This guarantees you get the exact CUDA 12.4 + Python 3.12 + Windows build with no ambiguity.
+This selects the pinned CUDA 12.4 Windows wheel directly instead of relying on CPU-wheel resolution.
 
 ---
 
@@ -811,4 +801,62 @@ server\.venv\Scripts\python.exe -c "from llama_cpp import llama_supports_gpu_off
 npm run dev
 ```
 
-If all three pass, the environment is fully configured with GPU acceleration.
+If all three pass, verify each selected model loads and generates successfully on the GPU.
+
+## Runtime and queue behavior
+
+The API process handles HTTP and telemetry; a supervised child process owns the
+native GGUF model and all inference/pipeline work. Chat, streaming chat, proposal
+decomposition, workspace decomposition, and staffing share one FIFO queue. Only
+one GPU job executes at a time on this laptop. A model is loaded on demand and
+reused until the next job selects a different model. Model files on disk do not
+mean all models are loaded into VRAM.
+
+Admission permits 32 waiting jobs and 2 outstanding jobs per authenticated user
+by default. An owner-scoped request ID is idempotent, including when admission is
+full. Rejected admission returns HTTP 429 with `Retry-After: 5`. Queue/results are
+in memory: a restart clears them. Completed/failed results are pruned after one
+hour and capped at 200 retained jobs. Input documents are discarded after a job
+finishes; queued inputs remain in memory until their turn or cancellation.
+
+`DELETE /controlpanelEflow/api/ai/jobs/{job_id}` on this repository's embedded
+gateway cancels the signed-in user's job. The private equivalent is
+`DELETE /controlpanelEflow/api/jobs/{job_id}` with the gateway's verified owner
+header. The local dashboard has its authenticated admin cancellation route at
+`DELETE /controlpanelEflow/api/operations/jobs/{job_id}`. Cancellation uses the
+existing `failed` terminal status plus `cancelled: true` for client compatibility.
+The active request stays processing until its native child exits; only then does
+the next request start. A cancelled/expired inference worker restarts lazily.
+Disconnecting a stream closes its upstream request and cancels the native job.
+
+Inference has a configurable 7200-second execution deadline. Default output caps
+are 1024 tokens for chat and 4096 per pipeline generation, further limited by
+available model context. Workspace sections are measured with the actual loaded
+model tokenizer, preserve source text, and reserve room for the response.
+`max_tokens` accepts 1–4096 on chat/job payloads. `.env.example` documents the
+runtime knobs; this change does not overwrite the host's `.env`.
+
+Outbound HTTP connections are reused. Remote log persistence runs through a
+bounded background writer and never gates completion. Each SSE subscriber is
+bounded; a slow reader loses its oldest unread logs. Hardware samples are cached
+for 2.5 seconds, include inference-child CPU/RAM, and the console avoids overlapping
+polls and pauses periodic telemetry while hidden. Operations include recent
+model-load, inference, pipeline, and first-token timing measurements.
+
+Standalone optimization and wallet operations run outside the API event loop.
+A dedicated single-thread wallet executor serializes access, including after a
+request is cancelled, to preserve transaction nonce ordering. PyGAD precomputes
+skill/weakness comparisons and optimizes only meaningful employee assignment
+genes; dependency scheduling and approved source budgets retain their behavior.
+
+The dashboard uses official Vibe components and tokens plus a self-hosted Figtree
+font. Unused dashboard cards and status capsules were removed. `npm run typecheck`
+checks the active UI and its imported dependencies, and `npm run build` builds it.
+Run offline regressions with `server/.venv/Scripts/python.exe server/run_tests.py`.
+The guarded `server/benchmark_runtime.py` measures cold/warm synthetic chat on the
+local GPU without touching remote services. See [the performance notes](docs/server-performance.md).
+
+The dedicated eFlow tutorial, two-user tutorial concurrency, speech recognition,
+and speech synthesis are later work. Parakeet and Kitten TTS were not installed or
+wired up, and EflowWeb was not changed. An external gateway will need to expose
+the cancellation route when that repository is integrated later.

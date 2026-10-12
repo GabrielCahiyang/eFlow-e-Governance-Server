@@ -1,91 +1,62 @@
-import { useState, useEffect, useCallback } from 'react';
-import { ModelSidebar, type Model } from './components/ModelSidebar';
-import { ControlDashboard } from './components/ControlDashboard';
-import { listModels, listRunningModels, pingBackend, toggleModel as toggleModelApi, getDisabledModels } from './services/llm';
-import { useServerLogs } from './services/serverLogs';
+import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  ModelSidebar,
+  type Model,
+  type DashboardView,
+} from "./components/ModelSidebar";
+import { ControlDashboard } from "./components/ControlDashboard";
+import {
+  listModels,
+  pingBackend,
+  toggleModel as toggleModelApi,
+  getDisabledModels,
+} from "./services/llm";
+import { useServerLogs } from "./services/serverLogs";
 
 // ── Model definitions matching the Python backend's model registry ───
 
-const MODEL_DEFS: (Omit<Model, 'status'> & { modelTag: string })[] = [
+const MODEL_DEFS: (Omit<Model, "status"> & { modelTag: string })[] = [
   {
-    id: 'llama3-8b',
-    name: 'Llama 3 8B',
-    modelTag: 'llama3:8b',
-    category: 'chat',
-    vram: 4.7,
-    speed: 'medium',
-    description: 'Chat / Edit',
-    supportsVision: false,
-  },
-  {
-    id: 'gemma-12b',
-    name: 'Gemma 3 12B',
-    modelTag: 'gemma3:12b',
-    category: 'reasoning',
-    vram: 7.2,
-    speed: 'slow',
-    description: 'Strong reasoning',
-    supportsVision: false,
-  },
-  {
-    id: 'deepseek-8b',
-    name: 'DeepSeek 8B',
-    modelTag: 'deepseek-r1:8b',
-    category: 'reasoning',
+    id: "deepseek-8b",
+    name: "DeepSeek R1 8B",
+    modelTag: "deepseek-r1:8b",
+    category: "reasoning",
     vram: 4.9,
-    speed: 'medium',
-    description: 'Advanced reasoning',
+    speed: "medium",
+    description: "Proposal decomposition and reasoning",
     supportsVision: false,
   },
   {
-    id: 'qwen-7b',
-    name: 'Qwen 7B',
-    modelTag: 'qwen2.5:7b',
-    category: 'chat',
-    vram: 4.4,
-    speed: 'medium',
-    description: 'Balanced',
+    id: "qwen3.5-2b",
+    name: "Qwen3.5 2B",
+    modelTag: "qwen3.5:2b",
+    category: "fast",
+    vram: 1.4,
+    speed: "fast",
+    description: "Lightweight eFlow tutorial candidate",
     supportsVision: false,
   },
   {
-    id: 'phi3',
-    name: 'Phi-3 Mini',
-    modelTag: 'phi3:latest',
-    category: 'fast',
-    vram: 2.2,
-    speed: 'fast',
-    description: 'Fast responses',
-    supportsVision: false,
-  },
-  {
-    id: 'qwen-coder-1.5b',
-    name: 'Qwen2.5-Coder 1.5B',
-    modelTag: 'qwen2.5-coder:1.5b',
-    category: 'coding',
-    vram: 1.1,
-    speed: 'fast',
-    description: 'Autocomplete / Code',
-    supportsVision: false,
-  },
-  {
-    id: 'nomic-embed',
-    name: 'Nomic Embed',
-    modelTag: 'nomic-embed-text:latest',
-    category: 'embedding',
-    vram: 0.1,
-    speed: 'fast',
-    description: 'Embeddings',
+    id: "qwen3.5-4b",
+    name: "Qwen3.5 4B",
+    modelTag: "qwen3.5:4b",
+    category: "chat",
+    vram: 2.7,
+    speed: "medium",
+    description: "Higher-capacity eFlow tutorial candidate",
     supportsVision: false,
   },
 ];
 
 export default function App() {
+  const statusInFlight = useRef(false);
+  const [view, setView] = useState<DashboardView>("overview");
   const [models, setModels] = useState<Model[]>(() =>
-    MODEL_DEFS.map(d => ({ ...d, status: 'unloaded' as const }))
+    MODEL_DEFS.map((d) => ({ ...d, status: "unknown" as const })),
   );
   const [backendOnline, setBackendOnline] = useState(false);
   const [enabledModels, setEnabledModels] = useState<Set<string>>(
-    () => new Set(MODEL_DEFS.map(d => d.id)) // all enabled by default
+    () => new Set(MODEL_DEFS.map((d) => d.id)), // all enabled by default
   );
 
   // ── Server logs ─────────────────────────────────────────────────────
@@ -93,78 +64,73 @@ export default function App() {
 
   // ── Poll backend for model availability ─────────────────────────────
   const refreshStatus = useCallback(async () => {
+    if (statusInFlight.current) return;
+    statusInFlight.current = true;
     const online = await pingBackend();
     setBackendOnline(online);
     if (!online) {
-      setModels(MODEL_DEFS.map(d => ({ ...d, status: 'unloaded' as const })));
+      setModels(MODEL_DEFS.map((d) => ({ ...d, status: "unknown" as const })));
+      statusInFlight.current = false;
       return;
     }
 
     try {
-      const [available, running] = await Promise.all([
+      const [available, disabled] = await Promise.all([
         listModels(),
-        listRunningModels(),
+        getDisabledModels(),
       ]);
 
-      const availableNames = new Set(available.map(m => m.name));
-      const runningNames = new Set(running.map(m => m.name));
+      setEnabledModels(
+        new Set(
+          MODEL_DEFS.filter((d) => !disabled.includes(d.modelTag)).map(
+            (d) => d.id,
+          ),
+        ),
+      );
 
       // Check which models have been downloaded
       const downloadedNames = new Set(
-        available
-          .filter(m => (m as any).downloaded)
-          .map(m => m.name)
+        available.filter((m) => m.downloaded).map((m) => m.name),
       );
 
-      setModels(MODEL_DEFS.map(d => {
-        const isDownloaded = downloadedNames.has(d.modelTag);
-        const isRunning = runningNames.has(d.modelTag) ||
-          [...runningNames].some(n => n.startsWith(d.modelTag.split(':')[0]));
+      setModels(
+        MODEL_DEFS.map((d) => {
+          const isDownloaded = downloadedNames.has(d.modelTag);
 
-        return {
-          ...d,
-          status: isDownloaded ? 'loaded' as const : 'unloaded' as const,
-          vram: isRunning
-            ? +(running.find(r => r.name === d.modelTag || r.name.startsWith(d.modelTag.split(':')[0]))?.size_vram ?? d.vram * 1e9) / 1e9
-            : d.vram,
-        };
-      }));
+          return {
+            ...d,
+            status: isDownloaded ? ("loaded" as const) : ("unloaded" as const),
+            vram:
+              +(
+                available.find((m) => m.name === d.modelTag)?.size ??
+                d.vram * 1e9
+              ) / 1e9,
+          };
+        }),
+      );
     } catch (err) {
-      console.error('Failed to refresh models:', err);
+      console.error("Failed to refresh models:", err);
+    } finally {
+      statusInFlight.current = false;
     }
   }, []);
 
   useEffect(() => {
     refreshStatus();
-    const interval = setInterval(refreshStatus, 10_000);
+    const interval = setInterval(() => {
+      if (!document.hidden) void refreshStatus();
+    }, 10_000);
     return () => clearInterval(interval);
   }, [refreshStatus]);
 
-  // Fetch disabled models on startup
-  useEffect(() => {
-    getDisabledModels().then((disabled) => {
-      if (disabled.length > 0) {
-        const disabledIds = new Set(
-          MODEL_DEFS.filter(d => disabled.includes(d.modelTag)).map(d => d.id)
-        );
-        setEnabledModels(prev => {
-          const next = new Set(prev);
-          disabledIds.forEach(id => next.delete(id));
-          return next;
-        });
-      }
-    });
-  }, []);
-
-  // ── Model toggle — sync with backend ──────────────────────────────
   const handleToggleModel = async (modelId: string) => {
-    const def = MODEL_DEFS.find(d => d.id === modelId);
+    const def = MODEL_DEFS.find((d) => d.id === modelId);
     if (!def) return;
 
     const newEnabled = !enabledModels.has(modelId);
 
     // Optimistic UI update
-    setEnabledModels(prev => {
+    setEnabledModels((prev) => {
       const next = new Set(prev);
       if (newEnabled) {
         next.add(modelId);
@@ -178,7 +144,7 @@ export default function App() {
     const result = await toggleModelApi(def.modelTag, newEnabled);
     if (!result.ok) {
       // Revert on failure
-      setEnabledModels(prev => {
+      setEnabledModels((prev) => {
         const next = new Set(prev);
         if (newEnabled) {
           next.delete(modelId);
@@ -191,14 +157,13 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f7f7f6] text-neutral-950">
-      <ModelSidebar
-        models={models}
-        enabledModels={enabledModels}
-        onToggleModel={handleToggleModel}
-        backendOnline={backendOnline}
-      />
+    <div className="server-app light-app-theme">
+      <ModelSidebar view={view} onViewChange={setView} />
       <ControlDashboard
+        view={view}
+        onViewChange={setView}
+        backendOnline={backendOnline}
+        onToggleModel={handleToggleModel}
         logs={logs}
         serverStatus={serverStatus}
         usageStats={usageStats}

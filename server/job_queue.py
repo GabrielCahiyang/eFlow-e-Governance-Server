@@ -12,6 +12,10 @@ from uuid import uuid4
 JobStatus = Literal["queued", "processing", "completed", "failed"]
 JobProcessor = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
+
+class QueueCapacityError(ValueError):
+    """Retryable admission failure, distinct from an invalid payload."""
+
 _progress_reporter: ContextVar[Callable[[dict[str, Any]], None] | None] = ContextVar("eflow_job_progress", default=None)
 
 
@@ -37,6 +41,8 @@ class AiJob:
     error: str | None = None
     progress: dict[str, Any] | None = None
     progress_history: list[dict[str, Any]] = field(default_factory=list)
+    cancelled: bool = False
+    completion: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 class AiJobQueue:
@@ -48,29 +54,52 @@ class AiJobQueue:
         *,
         result_ttl_seconds: int = 3600,
         max_retained_jobs: int = 200,
+        max_waiting_jobs: int = 32,
+        max_jobs_per_owner: int = 2,
+        cleanup_interval_seconds: float = 30,
     ) -> None:
         self._processor = processor
         self._result_ttl_seconds = result_ttl_seconds
         self._max_retained_jobs = max_retained_jobs
+        self._max_waiting_jobs = max_waiting_jobs
+        self._max_jobs_per_owner = max_jobs_per_owner
+        self._cleanup_interval_seconds = cleanup_interval_seconds
         self._jobs: dict[str, AiJob] = {}
         self._request_jobs: dict[tuple[str, str], str] = {}
         self._waiting: deque[str] = deque()
-        self._queue: asyncio.Queue[str | None] = asyncio.Queue()
+        self._wake = asyncio.Event()
         self._worker: asyncio.Task[None] | None = None
         self._active_job_id: str | None = None
         self._lock = asyncio.Lock()
+        self._cleanup_task = None
+        self._processor_task = None
+        self._accepting = True
 
     async def start(self) -> None:
         if self._worker and not self._worker.done():
             return
         self._worker = asyncio.create_task(self._run(), name="eflow-ai-job-worker")
+        self._accepting = True
+        self._cleanup_task = asyncio.create_task(self._cleanup(), name="eflow-job-cleanup")
 
-    async def stop(self) -> None:
+    async def stop(self, *, drain: bool = True) -> None:
         if not self._worker:
             return
-        await self._queue.put(None)
+        self._accepting = False
+        if not drain:
+            for job in list(self._jobs.values()):
+                if job.status in {"queued", "processing"}:
+                    await self.cancel(job.id)
+        self._wake.set()
         await self._worker
         self._worker = None
+        if self._cleanup_task:
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
+            self._cleanup_task = None
 
     async def submit(
         self,
@@ -93,12 +122,54 @@ class AiJobQueue:
                 existing = self._jobs.get(existing_id or "")
                 if existing:
                     return self._snapshot_locked(existing)
+            if not self._accepting:
+                raise QueueCapacityError("The AI worker is shutting down. Try again shortly.")
+            if len(self._waiting) >= self._max_waiting_jobs:
+                raise QueueCapacityError("The AI queue is full. Try again shortly.")
+            owner_jobs = sum(j.owner_id == owner_id and j.status in {"queued", "processing"}
+                             for j in self._jobs.values())
+            if owner_jobs >= self._max_jobs_per_owner:
+                raise QueueCapacityError("You already have the maximum number of outstanding AI requests.")
             self._jobs[job.id] = job
             if request_id:
                 self._request_jobs[(owner_id, request_id)] = job.id
             self._waiting.append(job.id)
-            await self._queue.put(job.id)
+            self._wake.set()
             return self._snapshot_locked(job)
+
+    async def wait(self, job_id: str, owner_id: str) -> dict[str, Any] | None:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if not job or job.owner_id != owner_id:
+                return None
+        await job.completion.wait()
+        return self._snapshot_locked(job)
+
+    async def cancel(self, job_id: str, owner_id: str | None = None) -> dict[str, Any] | None:
+        """None owner is reserved for the authenticated local operations API."""
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if not job or (owner_id is not None and job.owner_id != owner_id):
+                return None
+            if job.status in {"completed", "failed"} or job.cancelled:
+                return self._snapshot_locked(job)
+            job.cancelled = True
+            if job.status == "queued":
+                self._waiting.remove(job.id)
+                job.status = "failed"
+                job.error = "Cancelled by user"
+                job.completed_at = time.time()
+                job.payload = {"model": job.payload.get("model")}
+                job.completion.set()
+            elif self._processor_task:
+                self._processor_task.cancel()
+            return self._snapshot_locked(job)
+
+    async def _cleanup(self):
+        while True:
+            await asyncio.sleep(self._cleanup_interval_seconds)
+            async with self._lock:
+                self._prune_locked()
 
     async def snapshot(self, job_id: str, owner_id: str) -> dict[str, Any] | None:
         async with self._lock:
@@ -136,27 +207,31 @@ class AiJobQueue:
                 ),
                 "completed_retained": completed,
                 "failed_retained": failed,
+                "capacity": self._max_waiting_jobs,
+                "per_user_limit": self._max_jobs_per_owner,
+                "jobs": [
+                    {"job_id": j.id, "model": j.payload.get("model"), "status": j.status,
+                     "submitted_at": j.submitted_at, "started_at": j.started_at,
+                     "progress": ({**j.progress, "history": list(j.progress_history)} if j.progress else None), "cancelled": j.cancelled}
+                    for j in ([active] if active else []) + [self._jobs[i] for i in self._waiting]
+                ],
             }
 
     async def _run(self) -> None:
         while True:
-            job_id = await self._queue.get()
-            if job_id is None:
-                self._queue.task_done()
-                return
-
+            await self._wake.wait()
             async with self._lock:
-                job = self._jobs.get(job_id)
-                if not job:
-                    self._queue.task_done()
+                if not self._waiting:
+                    self._wake.clear()
+                    if not self._accepting:
+                        return
                     continue
-                if self._waiting and self._waiting[0] == job_id:
-                    self._waiting.popleft()
-                else:
-                    try:
-                        self._waiting.remove(job_id)
-                    except ValueError:
-                        pass
+                job_id = self._waiting.popleft()
+                if not self._waiting:
+                    self._wake.clear()
+                    if not self._accepting:
+                        self._wake.set()
+                job = self._jobs[job_id]
                 self._active_job_id = job_id
                 job.status = "processing"
                 job.started_at = time.time()
@@ -166,10 +241,17 @@ class AiJobQueue:
                 lambda metadata, target_id=job_id: loop.call_soon_threadsafe(self._record_progress, target_id, metadata)
             )
             try:
-                result = await self._processor(job.payload)
+                self._processor_task = asyncio.create_task(self._processor(job.payload))
+                result = await self._processor_task
                 async with self._lock:
                     job.result = result
                     job.status = "completed"
+                    job.completed_at = time.time()
+            except asyncio.CancelledError:
+                async with self._lock:
+                    job.cancelled = True
+                    job.error = "Cancelled by user"
+                    job.status = "failed"
                     job.completed_at = time.time()
             except Exception as exc:
                 async with self._lock:
@@ -179,9 +261,11 @@ class AiJobQueue:
             finally:
                 _progress_reporter.reset(progress_token)
                 async with self._lock:
+                    self._processor_task = None
+                    job.payload = {"model": job.payload.get("model")}
+                    job.completion.set()
                     if self._active_job_id == job_id:
                         self._active_job_id = None
-                self._queue.task_done()
 
     def _record_progress(self, job_id: str, metadata: dict[str, Any]) -> None:
         # Always runs on the event loop, including reports from to_thread.
@@ -219,6 +303,7 @@ class AiJobQueue:
             "completed_at": job.completed_at,
             "result": job.result if job.status == "completed" else None,
             "error": job.error if job.status == "failed" else None,
+            "cancelled": job.cancelled,
         }
 
     def _prune_locked(self) -> None:

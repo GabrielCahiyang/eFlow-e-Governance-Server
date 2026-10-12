@@ -40,8 +40,19 @@ export default defineConfig(({ mode }) => {
       },
     },
 
+    // The repository also contains a large Python environment and GGUF files.
+    // Scan only the dashboard entry, rather than every HTML file under the host.
+    optimizeDeps: {
+      entries: ['src/main.tsx'],
+      noDiscovery: true,
+      include: ['react', 'react-dom/client', 'lucide-react', '@vibe/button', '@vibe/toggle', '@vibe/text-inputs'],
+    },
+
     // Proxy API requests to the local Python LLM backend
     server: {
+      watch: {
+        ignored: [/[\\/](models|server|\.venv|__pycache__|\.git)([\\/]|$)/],
+      },
       proxy: {
         '/api': {
           target: 'http://127.0.0.1:8321',

@@ -2,25 +2,26 @@
 // Connects to GET /api/logs/stream via EventSource (SSE) and provides
 // a React hook for consuming live logs.
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from "react";
 
-const SSE_URL = '/api/logs/stream';
+const SSE_URL = "/api/logs/stream";
 
 // ── Types ────────────────────────────────────────────────────────────
 
-export type LogLevel = 'INFO' | 'WARNING' | 'ERROR' | 'DEBUG';
+export type LogLevel = "INFO" | "WARNING" | "ERROR" | "DEBUG";
 
 export type LogType =
-  | 'startup'
-  | 'shutdown'
-  | 'model_load'
-  | 'chat_request'
-  | 'auth'
-  | 'health'
-  | 'error'
-  | 'general';
+  | "startup"
+  | "shutdown"
+  | "model_load"
+  | "chat_request"
+  | "auth"
+  | "health"
+  | "error"
+  | "general";
 
 export type LogEntry = {
+  id?: string;
   timestamp: string;
   level: LogLevel;
   message: string;
@@ -34,7 +35,7 @@ export type LogEntry = {
   };
 };
 
-export type ServerStatus = 'connecting' | 'online' | 'offline' | 'error';
+export type ServerStatus = "connecting" | "online" | "offline" | "error";
 
 export type ModelStats = {
   requests: number;
@@ -61,7 +62,7 @@ export type UsageStats = {
 
 // ── Filter helpers ───────────────────────────────────────────────────
 
-const HEALTH_TYPES: LogType[] = ['health'];
+const HEALTH_TYPES: LogType[] = ["health"];
 
 export function isHealthLog(entry: LogEntry): boolean {
   return HEALTH_TYPES.includes(entry.type);
@@ -74,26 +75,34 @@ export function isMeaningfulLog(entry: LogEntry): boolean {
 // ── Log level color mapping ──────────────────────────────────────────
 
 export function getLogColor(entry: LogEntry): string {
-  if (entry.type === 'error' || entry.level === 'ERROR') return '#ef4444';
-  if (entry.type === 'auth' || entry.level === 'WARNING') return '#f59e0b';
-  if (entry.type === 'chat_request') return '#60a5fa';
-  if (entry.type === 'model_load') return '#a78bfa';
-  if (entry.type === 'startup') return '#4ade80';
-  if (entry.type === 'shutdown') return '#f87171';
-  if (entry.type === 'health') return 'rgba(255,255,255,0.25)';
-  return 'rgba(255,255,255,0.55)';
+  if (entry.type === "error" || entry.level === "ERROR") return "#ef4444";
+  if (entry.type === "auth" || entry.level === "WARNING") return "#f59e0b";
+  if (entry.type === "chat_request") return "#60a5fa";
+  if (entry.type === "model_load") return "#a78bfa";
+  if (entry.type === "startup") return "#4ade80";
+  if (entry.type === "shutdown") return "#f87171";
+  if (entry.type === "health") return "rgba(255,255,255,0.25)";
+  return "rgba(255,255,255,0.55)";
 }
 
 export function getLogTypeLabel(type: LogType): string {
   switch (type) {
-    case 'startup': return 'STARTUP';
-    case 'shutdown': return 'SHUTDOWN';
-    case 'model_load': return 'MODEL';
-    case 'chat_request': return 'CHAT';
-    case 'auth': return 'AUTH';
-    case 'health': return 'HEALTH';
-    case 'error': return 'ERROR';
-    default: return 'LOG';
+    case "startup":
+      return "STARTUP";
+    case "shutdown":
+      return "SHUTDOWN";
+    case "model_load":
+      return "MODEL";
+    case "chat_request":
+      return "CHAT";
+    case "auth":
+      return "AUTH";
+    case "health":
+      return "HEALTH";
+    case "error":
+      return "ERROR";
+    default:
+      return "LOG";
   }
 }
 
@@ -116,53 +125,77 @@ const INITIAL_STATS: UsageStats = {
 };
 
 export function useServerLogs(enabled: boolean = true) {
+  const seen = useRef(new Set<string>());
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [serverStatus, setServerStatus] = useState<ServerStatus>('connecting');
-  const [usageStats, setUsageStats] = useState<UsageStats>({ ...INITIAL_STATS });
+  const [serverStatus, setServerStatus] = useState<ServerStatus>("connecting");
+  const [usageStats, setUsageStats] = useState<UsageStats>({
+    ...INITIAL_STATS,
+  });
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const processEntry = useCallback((entry: LogEntry) => {
+    const identity =
+      entry.id ?? `${entry.timestamp}:${entry.source}:${entry.message}`;
+    if (seen.current.has(identity)) return;
+    seen.current.add(identity);
+    if (seen.current.size > 2_000) {
+      const oldest = seen.current.values();
+      for (let i = 0; i < 500; i++) {
+        const value = oldest.next().value;
+        if (value) seen.current.delete(value);
+      }
+    }
     // Update logs
-    setLogs(prev => {
+    setLogs((prev) => {
       const updated = [...prev, entry];
       return updated.length > MAX_LOGS ? updated.slice(-MAX_LOGS) : updated;
     });
 
     // Update server status from log content
-    if (entry.type === 'startup') {
-      setServerStatus('online');
-    } else if (entry.type === 'shutdown') {
-      setServerStatus('offline');
+    if (entry.type === "startup") {
+      setServerStatus("online");
+    } else if (entry.type === "shutdown") {
+      setServerStatus("offline");
     }
 
     // Track startup time
-    if (entry.type === 'startup' && entry.message.includes('Application startup complete')) {
-      setUsageStats(prev => ({ ...prev, serverStartTime: entry.timestamp }));
+    if (
+      entry.type === "startup" &&
+      entry.message.includes("Application startup complete")
+    ) {
+      setUsageStats((prev) => ({ ...prev, serverStartTime: entry.timestamp }));
     }
 
     // Track errors
-    if (entry.type === 'error') {
-      setUsageStats(prev => ({ ...prev, errorsCount: prev.errorsCount + 1 }));
+    if (entry.type === "error") {
+      setUsageStats((prev) => ({ ...prev, errorsCount: prev.errorsCount + 1 }));
     }
 
     // Track auth failures
-    if (entry.type === 'auth') {
-      setUsageStats(prev => ({ ...prev, authFailures: prev.authFailures + 1 }));
+    if (entry.type === "auth") {
+      setUsageStats((prev) => ({
+        ...prev,
+        authFailures: prev.authFailures + 1,
+      }));
     }
 
     // Track usage stats for chat requests
-    if (entry.type === 'chat_request' && entry.extra) {
+    if (entry.type === "chat_request" && entry.extra) {
       const { model, tokens = 0, latency_ms = 0 } = entry.extra;
 
-      setUsageStats(prev => {
+      setUsageStats((prev) => {
         const newTotal = prev.totalRequests + 1;
         const newTokens = prev.totalTokens + tokens;
         const newTotalGenTime = prev.totalGenerationTimeMs + latency_ms;
         const newAvg = newTotalGenTime / newTotal;
         const newPeak = Math.max(prev.peakLatencyMs, latency_ms);
-        const newMin = Math.min(prev.minLatencyMs === Infinity ? latency_ms : prev.minLatencyMs, latency_ms);
-        const newTps = newTotalGenTime > 0 ? (newTokens / newTotalGenTime) * 1000 : 0;
+        const newMin = Math.min(
+          prev.minLatencyMs === Infinity ? latency_ms : prev.minLatencyMs,
+          latency_ms,
+        );
+        const newTps =
+          newTotalGenTime > 0 ? (newTokens / newTotalGenTime) * 1000 : 0;
 
         // Per-model stats
         const newModelUsage = { ...prev.modelUsage };
@@ -172,13 +205,15 @@ export function useServerLogs(enabled: boolean = true) {
             tokens: 0,
             totalLatencyMs: 0,
             avgLatencyMs: 0,
-            lastUsed: '',
+            lastUsed: "",
           };
           const updatedModel: ModelStats = {
             requests: existing.requests + 1,
             tokens: existing.tokens + tokens,
             totalLatencyMs: existing.totalLatencyMs + latency_ms,
-            avgLatencyMs: Math.round((existing.totalLatencyMs + latency_ms) / (existing.requests + 1)),
+            avgLatencyMs: Math.round(
+              (existing.totalLatencyMs + latency_ms) / (existing.requests + 1),
+            ),
             lastUsed: entry.timestamp,
           };
           newModelUsage[model] = updatedModel;
@@ -205,12 +240,12 @@ export function useServerLogs(enabled: boolean = true) {
       eventSourceRef.current.close();
     }
 
-    setServerStatus('connecting');
+    setServerStatus("connecting");
     const es = new EventSource(SSE_URL);
     eventSourceRef.current = es;
 
     es.onopen = () => {
-      setServerStatus('online');
+      setServerStatus("online");
     };
 
     es.onmessage = (event) => {
@@ -225,7 +260,7 @@ export function useServerLogs(enabled: boolean = true) {
     es.onerror = () => {
       es.close();
       eventSourceRef.current = null;
-      setServerStatus('offline');
+      setServerStatus("offline");
 
       // Auto-reconnect after 5 seconds
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);

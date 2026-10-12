@@ -32,12 +32,12 @@ PUT  /api/authkey       — update auth key in Supabase app_config
 """
 
 import os
-import gc
 import json
 import time
 import asyncio
 import logging
 import aiohttp
+from http_client import get_session, close_session
 from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -49,18 +49,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from job_queue import AiJobQueue, report_job_progress
+from job_queue import AiJobQueue, QueueCapacityError
 from system_metrics import read_system_metrics
+from service_status import service_status
 from tunnel_control import request_tunnel_rotation, read_tunnel_state
 
-from proposal_pipeline import (
-    is_proposal_decomposition_prompt,
-    execute_proposal_pipeline,
-)
-from workspace_decomposition import execute_workspace_pipeline, validate_workspace_request
-from workspace_staffing import execute_staffing_pipeline, validate_staffing_request
+from request_validation import validate_chat_request as _validate_chat_body
 from model_registry import (
-    ModelEntry,
     get_model,
     list_all_models,
     download_model,
@@ -141,21 +136,21 @@ async def get_cached_api_key() -> Optional[str]:
             "apikey": SUPABASE_SERVICE_ROLE_KEY,
             "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
         }
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    if data and isinstance(data, list) and data[0].get("value"):
-                        api_key = data[0]["value"].strip()
-                        _api_key_cache["value"] = api_key
-                        _api_key_cache["timestamp"] = current_time
-                        logger.debug("Fetched auth key from Supabase app_config")
-                        return api_key
-                else:
-                    body = await resp.text()
-                    logger.error(f"Supabase app_config fetch failed {resp.status}: {body[:200]}")
+        session = await get_session()
+        async with session.get(
+            url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)
+        ) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                if data and isinstance(data, list) and data[0].get("value"):
+                    api_key = data[0]["value"].strip()
+                    _api_key_cache["value"] = api_key
+                    _api_key_cache["timestamp"] = current_time
+                    logger.debug("Fetched auth key from Supabase app_config")
+                    return api_key
+            else:
+                body = await resp.text()
+                logger.error(f"Supabase app_config fetch failed {resp.status}: {body[:200]}")
     except Exception as e:
         logger.error(f"Failed to fetch API key from Supabase: {e}")
 
@@ -182,7 +177,7 @@ class SupabaseKeyAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Allow unauthenticated access to auth key, health, and log stream endpoints
-        if request.url.path.endswith(("/AUTHKEY", "/api/authkey", "/api/health", "/api/logs/stream")):
+        if request.method == "GET" and request.url.path.endswith(("/AUTHKEY", "/api/authkey", "/api/health", "/api/logs/stream")):
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization", "")
@@ -205,69 +200,10 @@ class SupabaseKeyAuthMiddleware(BaseHTTPMiddleware):
 # ── Global model state ────────────────────────────────────────────────
 
 
-class ModelManager:
-    """Manages loading / unloading a single model at a time."""
+from inference_worker import InferenceWorker
 
-    def __init__(self):
-        self._llm = None  # Llama instance
-        self._loaded_tag: Optional[str] = None
-
-    @property
-    def loaded_tag(self) -> Optional[str]:
-        return self._loaded_tag
-
-    @property
-    def llm(self):
-        return self._llm
-
-    def load(self, entry: ModelEntry) -> None:
-        """Load a model, unloading the previous one first."""
-        if self._loaded_tag == entry.tag and self._llm is not None:
-            logger.info(f"Model {entry.tag} already loaded — skipping")
-            return
-
-        self.unload()
-
-        # Download if needed
-        if not entry.is_downloaded:
-            logger.info(f"Model {entry.tag} not found locally — downloading …")
-            download_model(entry)
-
-        if not entry.is_downloaded:
-            raise RuntimeError(f"Model file missing after download: {entry.local_path}")
-
-        # Import here so the module-level import doesn't crash if
-        # llama-cpp-python isn't installed yet (for the start script).
-        from llama_cpp import Llama
-
-        logger.info(f"Loading model {entry.tag} from {entry.local_path} …")
-        start = time.time()
-
-        kwargs = {
-            "model_path": str(entry.local_path),
-            "n_ctx": entry.n_ctx,
-            "n_threads": None,  # auto-detect
-            "chat_format": entry.chat_format,
-            "verbose": False,
-            "n_gpu_layers": 99,  # whole model onto GPU
-        }
-        kwargs.update(entry.extra_kwargs)
-
-        self._llm = Llama(**kwargs)
-        self._loaded_tag = entry.tag
-        elapsed = time.time() - start
-        logger.info(f"Model {entry.tag} loaded in {elapsed:.1f}s")
-
-    def unload(self) -> None:
-        if self._llm is not None:
-            logger.info(f"Unloading model {self._loaded_tag}")
-            del self._llm
-            self._llm = None
-            self._loaded_tag = None
-            gc.collect()
-
-
-manager = ModelManager()
+manager = InferenceWorker()
+_stream_channels: dict[str, asyncio.Queue] = {}
 
 # ── Disabled models set (controlled from the frontend) ────────────────
 disabled_models: set[str] = set()
@@ -279,6 +215,8 @@ ROUTE_PREFIX = "/controlpanelEflow"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _handler.bind_loop(asyncio.get_running_loop())
+    await supabase_log_writer.start()
     logger.info("LLM Backend starting …")
     logger.info(f"Route prefix : {ROUTE_PREFIX}")
     logger.info(f"Registered models: {[m.tag for m in list_all_models()]}")
@@ -292,12 +230,15 @@ async def lifespan(app: FastAPI):
             "Ensure the app_config table has a row with key='llm_auth_key'."
         )
     await job_queue.start()
+    await service_status.start()
     logger.info("FIFO AI job worker started.")
     yield
-    await job_queue.stop()
-    manager.unload()
+    await job_queue.stop(drain=False)
+    await manager.close()
+    await service_status.stop()
     logger.info("LLM Backend shut down.")
     await supabase_log_writer.close()
+    await close_session()
 
 
 app = FastAPI(title="eFlow Server Side", lifespan=lifespan)
@@ -328,12 +269,14 @@ async def health():
 async def operations_snapshot():
     """Live operational facts used by the local server dashboard."""
     hardware, queue = await asyncio.gather(
-        asyncio.to_thread(read_system_metrics, SERVER_STARTED_AT),
+        asyncio.to_thread(read_system_metrics, SERVER_STARTED_AT, manager.pid),
         job_queue.overview(),
     )
     return {
         **hardware,
         "queue": queue,
+        "inference": manager.overview(),
+        "services": service_status.snapshot(),
         "model": {
             "loaded": manager.loaded_tag,
             "registered": len(list_all_models()),
@@ -374,7 +317,13 @@ async def rotate_tunnel():
 @router.put("/api/models/toggle")
 async def toggle_model(request: Request):
     """Enable or disable a model. Disabled models reject chat requests."""
-    body = await request.json()
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError("AI request must be an object")
+        _validate_chat_body(body)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
     model_tag = body.get("model", "")
     enabled = body.get("enabled", True)
 
@@ -479,20 +428,20 @@ async def update_auth_key(request: Request):
             "Prefer": "return=minimal",
         }
         payload = {"value": new_key, "updated_at": "now()"}
-        async with aiohttp.ClientSession() as session:
-            async with session.patch(
-                url,
-                json=payload,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=5),
-            ) as resp:
-                if resp.status >= 400:
-                    body_text = await resp.text()
-                    logger.error(f"Failed to update auth key in Supabase: {resp.status} {body_text}")
-                    return JSONResponse(
-                        {"error": f"Supabase write failed: {resp.status}"},
-                        status_code=500,
-                    )
+        session = await get_session()
+        async with session.patch(
+            url,
+            json=payload,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as resp:
+            if resp.status >= 400:
+                body_text = await resp.text()
+                logger.error(f"Failed to update auth key in Supabase: {resp.status} {body_text}")
+                return JSONResponse(
+                    {"error": f"Supabase write failed: {resp.status}"},
+                    status_code=500,
+                )
 
         # Invalidate cache so the new key is used immediately
         _api_key_cache["value"] = new_key
@@ -567,7 +516,7 @@ async def trigger_download(request: Request):
         return JSONResponse({"error": f"Unknown model: {tag}"}, status_code=404)
 
     try:
-        download_model(entry)
+        await asyncio.to_thread(download_model, entry)
         return {"status": "ok", "model": tag, "path": str(entry.local_path)}
     except Exception as e:
         logger.exception(f"Download failed for {tag}")
@@ -580,7 +529,13 @@ async def trigger_download(request: Request):
 @router.post("/api/chat")
 @router.post("/api/chat/{model_tag:path}")
 async def chat(request: Request, model_tag: Optional[str] = None):
-    body = await request.json()
+    try:
+        body = await request.json()
+        if not isinstance(body, dict):
+            raise ValueError("AI request must be an object")
+        _validate_chat_body(body)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
     model_tag = model_tag or body.get("model", "")
     messages = body.get("messages", [])
     stream = body.get("stream", True)
@@ -599,186 +554,68 @@ async def chat(request: Request, model_tag: Optional[str] = None):
             status_code=403,
         )
 
-    # Preserve the legacy non-streaming /chat contract while routing it through
-    # the same FIFO worker. Older eFlow builds will wait instead of colliding
-    # with an active model request; new builds use /jobs for visible position.
-    if not stream:
-        owner_id = request.headers.get("X-eFlow-User-Id", "").strip()
-        if not owner_id:
-            owner_id = f"legacy-local-{uuid4()}"
-        request_id = str(body.get("request_id", "")).strip() or None
-        snapshot = await job_queue.submit(
-            owner_id,
-            {**body, "model": model_tag, "stream": False},
-            request_id=request_id,
-        )
-        while snapshot["status"] in {"queued", "processing"}:
-            await asyncio.sleep(0.5)
-            snapshot = await job_queue.snapshot(snapshot["job_id"], owner_id)
-            if not snapshot:
-                return JSONResponse({"error": "Queued job was lost"}, status_code=500)
-        if snapshot["status"] == "failed":
-            return JSONResponse(
-                {"error": snapshot.get("error") or "Queued AI request failed"},
-                status_code=500,
-            )
-        return snapshot["result"]
-
-    # Load the model if needed (swaps out any previously loaded model)
     try:
-        manager.load(entry)
-    except Exception as e:
-        logger.exception(f"Failed to load model {model_tag}")
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-    llm = manager.llm
-    if llm is None:
-        return JSONResponse({"error": "Model failed to load"}, status_code=500)
-
-    # Build messages for llama-cpp-python
-    chat_messages = []
-    for msg in messages:
-        chat_messages.append(
-            {
-                "role": msg.get("role", "user"),
-                "content": msg.get("content", ""),
-            }
-        )
-
-    if stream:
-        return StreamingResponse(
-            _stream_chat(llm, chat_messages, model_tag),
-            media_type="application/x-ndjson",
-        )
-    else:
-        if is_proposal_decomposition_prompt(chat_messages):
-            return execute_proposal_pipeline(llm, chat_messages, model_tag)
-        return _sync_chat(llm, chat_messages, model_tag)
+        owner_id = request.headers.get("X-eFlow-User-Id", "").strip() or f"legacy-local-{uuid4()}"
+        stream_id = str(uuid4()) if stream else None
+        if stream_id:
+            _stream_channels[stream_id] = asyncio.Queue(maxsize=16)
+        payload = {**body, "model": model_tag, "stream": False}
+        if stream_id:
+            payload["_stream_id"] = stream_id
+        snapshot = await job_queue.submit(owner_id, payload, request_id=body.get("request_id") if not stream else None)
+    except QueueCapacityError as exc:
+        if stream_id:
+            _stream_channels.pop(stream_id, None)
+        return JSONResponse({"error": str(exc)}, status_code=429, headers={"Retry-After": "5"})
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    if stream_id:
+        return StreamingResponse(_queued_stream(snapshot, owner_id, stream_id, model_tag),
+                                 media_type="application/x-ndjson")
+    result = await job_queue.wait(snapshot["job_id"], owner_id)
+    if not result or result["status"] == "failed":
+        return JSONResponse({"error": (result or {}).get("error") or "Queued AI request failed"}, status_code=500)
+    return result["result"]
 
 
-def _sync_chat(llm, messages: list[dict], model_tag: str):
-    """Non-streaming chat completion."""
-    start = time.time_ns()
+async def _process_queued_chat(body):
+    if body["model"] in disabled_models:
+        raise PermissionError("This model is disabled")
+    channel = _stream_channels.get(body.get("_stream_id"))
+    async def on_chunk(chunk):
+        await asyncio.wait_for(channel.put(chunk), timeout=30)
     try:
-        result = llm.create_chat_completion(messages=messages)
-    except Exception as e:
-        logger.exception("Chat completion error")
-        return JSONResponse({"error": str(e)}, status_code=500)
-
-    content = (
-        result["choices"][0]["message"]["content"] if result.get("choices") else ""
-    )
-    logger.info(f"[{model_tag}] response:\n{content}")
-    eval_count = result.get("usage", {}).get("completion_tokens", 0)
-    total_duration = time.time_ns() - start
-    latency_ms = total_duration / 1_000_000
-
-    # Log usage to Supabase
-    usage_entry = make_entry(
-        message=f"Chat completion: {model_tag} — {eval_count} tokens in {latency_ms:.0f}ms",
-        level="INFO",
-        source="chat",
-        log_type=LOG_TYPE_CHAT,
-        extra={
-            "model": model_tag,
-            "tokens": eval_count,
-            "latency_ms": round(latency_ms),
-            "stream": False,
-        },
-    )
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(supabase_log_writer.write(usage_entry))
-        loop.create_task(sse_manager.broadcast(usage_entry))
-    except RuntimeError:
-        pass
-    log_buffer.push(usage_entry)
-
-    return {
-        "model": model_tag,
-        "message": {"role": "assistant", "content": content},
-        "done": True,
-        "total_duration": total_duration,
-        "eval_count": eval_count,
-    }
+        result = await manager.execute(body, on_chunk=on_chunk if channel else None)
+        elapsed_ms = result.get("total_duration", 0) / 1e6
+        entry = make_entry(message=f"Chat completion: {body['model']} — {result.get('eval_count', 0)} tokens in {elapsed_ms:.0f}ms",
+                           source="chat", log_type=LOG_TYPE_CHAT,
+                           extra={"model": body["model"], "tokens": result.get("eval_count", 0),
+                                  "latency_ms": round(elapsed_ms), "stream": channel is not None,
+                                  "timings_ms": result.get("timings_ms")})
+        log_buffer.push(entry)
+        await sse_manager.broadcast(entry)
+        supabase_log_writer.enqueue(entry)
+        if channel:
+            await asyncio.wait_for(channel.put({"model": body["model"], "done": True,
+                                                "eval_count": result.get("eval_count", 0),
+                                                "total_duration": result.get("total_duration", 0)}), timeout=30)
+        return result
+    except asyncio.TimeoutError:
+        raise RuntimeError("AI execution exceeded its deadline or the stream stopped reading. Retry with a smaller request.")
+    except BaseException as exc:
+        if channel:
+            if channel.full():
+                channel.get_nowait()
+            channel.put_nowait({"model": body["model"], "done": True, "error": str(exc) or "Request cancelled"})
+        raise
 
 
-def _execute_queued_chat(body: dict) -> dict:
-    """Run one queued non-streaming job in the queue's worker thread."""
-    if body.get("workspace_decomposition") is not None:
-        validate_workspace_request(body["workspace_decomposition"])
-    if body.get("workspace_staffing") is not None:
-        validate_staffing_request(body["workspace_staffing"])
-    model_tag = body.get("model", "")
-    entry = get_model(model_tag)
-    if not entry:
-        raise ValueError(f"Unknown model: {model_tag}")
-    if model_tag in disabled_models:
-        raise PermissionError(f"Model {model_tag} is currently disabled")
-
-    report_job_progress("loading_model", "Preparing the AI.")
-    manager.load(entry)
-    llm = manager.llm
-    if llm is None:
-        raise RuntimeError("Model failed to load")
-
-    chat_messages = [
-        {
-            "role": message.get("role", "user"),
-            "content": message.get("content", ""),
-        }
-        for message in body.get("messages", [])
-    ]
-    if body.get("workspace_staffing") is not None:
-        response = execute_staffing_pipeline(llm, body["workspace_staffing"], model_tag)
-    elif body.get("workspace_decomposition") is not None:
-        response = execute_workspace_pipeline(llm, body["workspace_decomposition"], model_tag)
-    elif is_proposal_decomposition_prompt(chat_messages):
-        response = execute_proposal_pipeline(llm, chat_messages, model_tag)
-    else:
-        response = _sync_chat(llm, chat_messages, model_tag)
-    if isinstance(response, JSONResponse):
-        payload = json.loads(response.body.decode("utf-8"))
-        raise RuntimeError(payload.get("error", "Queued AI request failed"))
-    return response
+job_queue = AiJobQueue(_process_queued_chat,
+                       max_waiting_jobs=int(os.getenv("EFLOW_QUEUE_CAPACITY", "32")),
+                       max_jobs_per_owner=int(os.getenv("EFLOW_QUEUE_PER_USER", "2")))
 
 
-async def _process_queued_chat(body: dict) -> dict:
-    result = await asyncio.to_thread(_execute_queued_chat, body)
-
-    # _sync_chat builds the normal local log entry in the worker thread. Write
-    # the same usage facts to the remote log sink from the active event loop.
-    total_duration = int(result.get("total_duration", 0))
-    eval_count = int(result.get("eval_count", 0))
-    latency_ms = total_duration / 1_000_000
-    usage_entry = make_entry(
-        message=(
-            f"Queued chat completion: {body.get('model', '')} — "
-            f"{eval_count} tokens in {latency_ms:.0f}ms"
-        ),
-        level="INFO",
-        source="chat",
-        log_type=LOG_TYPE_CHAT,
-        extra={
-            "model": body.get("model", ""),
-            "tokens": eval_count,
-            "latency_ms": round(latency_ms),
-            "stream": False,
-            "queued": True,
-        },
-    )
-    await asyncio.gather(
-        supabase_log_writer.write(usage_entry),
-        sse_manager.broadcast(usage_entry),
-        return_exceptions=True,
-    )
-    return result
-
-
-job_queue = AiJobQueue(_process_queued_chat)
-
-
-def _request_owner(request: Request) -> str:
+def _request_owner(request):
     owner_id = request.headers.get("X-eFlow-User-Id", "").strip()
     if not owner_id:
         raise ValueError("X-eFlow-User-Id is required for queued jobs")
@@ -790,30 +627,17 @@ async def enqueue_chat_job(request: Request):
     try:
         owner_id = _request_owner(request)
         body = await request.json()
+        _validate_chat_body(body)
         if body.get("stream") is True:
-            return JSONResponse(
-                {"error": "Queued jobs support non-streaming requests only"},
-                status_code=400,
-            )
+            return JSONResponse({"error": "Queued jobs support non-streaming requests only"}, status_code=400)
         if not get_model(body.get("model", "")):
-            return JSONResponse(
-                {"error": f"Unknown model: {body.get('model', '')}"},
-                status_code=404,
-            )
-        messages = body.get("messages")
-        if not isinstance(messages, list) or not messages:
-            return JSONResponse({"error": "messages are required"}, status_code=400)
-        request_id = str(body.get("request_id", "")).strip() or None
-        if body.get("workspace_decomposition") is not None:
-            validate_workspace_request(body["workspace_decomposition"])
-        if body.get("workspace_staffing") is not None:
-            validate_staffing_request(body["workspace_staffing"])
-        snapshot = await job_queue.submit(
-            owner_id,
-            {**body, "stream": False},
-            request_id=request_id,
-        )
+            return JSONResponse({"error": "Unknown model"}, status_code=404)
+        if body["model"] in disabled_models:
+            return JSONResponse({"error": "This model is disabled"}, status_code=403)
+        snapshot = await job_queue.submit(owner_id, {**body, "stream": False}, request_id=body.get("request_id"))
         return JSONResponse(snapshot, status_code=202)
+    except QueueCapacityError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=429, headers={"Retry-After": "5"})
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
 
@@ -821,81 +645,54 @@ async def enqueue_chat_job(request: Request):
 @router.get("/api/jobs/{job_id}")
 async def get_chat_job(job_id: str, request: Request):
     try:
-        owner_id = _request_owner(request)
+        snapshot = await job_queue.snapshot(job_id, _request_owner(request))
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
-    snapshot = await job_queue.snapshot(job_id, owner_id)
-    if not snapshot:
-        return JSONResponse({"error": "AI job not found"}, status_code=404)
-    return snapshot
+    return snapshot or JSONResponse({"error": "AI job not found"}, status_code=404)
 
 
-async def _stream_chat(llm, messages: list[dict], model_tag: str):
-    """Streaming chat completion — yields Ollama-compatible NDJSON lines."""
-    start = time.time_ns()
-    eval_count = 0
-
+@router.delete("/api/jobs/{job_id}")
+async def cancel_chat_job(job_id: str, request: Request):
     try:
-        stream = llm.create_chat_completion(messages=messages, stream=True)
-        for chunk in stream:
-            delta = chunk.get("choices", [{}])[0].get("delta", {})
-            token = delta.get("content", "")
-            if token:
-                eval_count += 1
-                line = json.dumps(
-                    {
-                        "model": model_tag,
-                        "message": {"role": "assistant", "content": token},
-                        "done": False,
-                    }
-                )
-                yield line + "\n"
-    except Exception as e:
-        logger.exception("Streaming error")
-        error_line = json.dumps(
-            {
-                "model": model_tag,
-                "message": {"role": "assistant", "content": f"\n\n⚠️ Error: {e}"},
-                "done": True,
-            }
-        )
-        yield error_line + "\n"
-        return
+        snapshot = await job_queue.cancel(job_id, _request_owner(request))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return snapshot or JSONResponse({"error": "AI job not found"}, status_code=404)
 
-    total_duration = time.time_ns() - start
-    latency_ms = total_duration / 1_000_000
 
-    # Log usage to Supabase
-    usage_entry = make_entry(
-        message=f"Chat completion: {model_tag} — {eval_count} tokens in {latency_ms:.0f}ms",
-        level="INFO",
-        source="chat",
-        log_type=LOG_TYPE_CHAT,
-        extra={
-            "model": model_tag,
-            "tokens": eval_count,
-            "latency_ms": round(latency_ms),
-            "stream": True,
-        },
-    )
+@router.delete("/api/operations/jobs/{job_id}")
+async def cancel_operation_job(job_id: str):
+    snapshot = await job_queue.cancel(job_id)
+    return snapshot or JSONResponse({"error": "AI job not found"}, status_code=404)
+
+
+async def _queued_stream(snapshot, owner_id, stream_id, model_tag):
+    channel = _stream_channels[stream_id]
+    finished = False
     try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(supabase_log_writer.write(usage_entry))
-        loop.create_task(sse_manager.broadcast(usage_entry))
-    except RuntimeError:
-        pass
-    log_buffer.push(usage_entry)
-
-    done_line = json.dumps(
-        {
-            "model": model_tag,
-            "message": {"role": "assistant", "content": ""},
-            "done": True,
-            "total_duration": total_duration,
-            "eval_count": eval_count,
-        }
-    )
-    yield done_line + "\n"
+        yield json.dumps({"model": model_tag, "done": False, "status": snapshot["status"],
+                          "job_id": snapshot["job_id"], "position": snapshot["position"]}) + "\n"
+        while True:
+            try:
+                chunk = await asyncio.wait_for(channel.get(), timeout=15)
+            except asyncio.TimeoutError:
+                current = await job_queue.snapshot(snapshot["job_id"], owner_id)
+                if current and current["status"] == "failed":
+                    finished = True
+                    yield json.dumps({"model": model_tag, "done": True, "error": current["error"]}) + "\n"
+                    return
+                yield json.dumps({"model": model_tag, "done": False, "status": (current or {}).get("status", "queued"),
+                                  "position": (current or {}).get("position")}) + "\n"
+                continue
+            if chunk.get("done"):
+                finished = True
+            yield json.dumps(chunk) + "\n"
+            if chunk.get("done"):
+                return
+    finally:
+        if not finished:
+            await job_queue.cancel(snapshot["job_id"], owner_id)
+        _stream_channels.pop(stream_id, None)
 
 
 # ── Mount router under prefix ─────────────────────────────────────────
@@ -916,59 +713,8 @@ app.include_router(proposals_router, prefix=ROUTE_PREFIX)
 # ── Main ──────────────────────────────────────────────────────────────
 
 
-def _kill_port(port: int):
-    """Kill any process currently using the given port (Windows + Unix)."""
-    import platform
-    import subprocess
-
-    system = platform.system()
-    try:
-        if system == "Windows":
-            # Use netstat to find the PID
-            result = subprocess.run(
-                ["netstat", "-ano", "-p", "TCP"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            for line in result.stdout.splitlines():
-                if f":{port}" in line and "LISTENING" in line:
-                    parts = line.strip().split()
-                    pid = int(parts[-1])
-                    logger.info(f"Killing old process PID {pid} on port {port}")
-                    subprocess.run(
-                        ["taskkill", "/F", "/PID", str(pid)],
-                        capture_output=True,
-                        timeout=5,
-                    )
-        else:
-            # Unix: use lsof
-            result = subprocess.run(
-                ["lsof", "-ti", f":{port}"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            for pid_str in result.stdout.strip().split():
-                pid = int(pid_str)
-                logger.info(f"Killing old process PID {pid} on port {port}")
-                import signal, os as _os
-
-                _os.kill(pid, signal.SIGTERM)
-    except Exception as e:
-        logger.debug(f"Port cleanup note: {e}")
-
-
 if __name__ == "__main__":
-    import uvicorn
-
-    _kill_port(8321)
-
-    # Never expose the raw model API directly to a LAN or Cloudflare tunnel.
-    # Remote eFlow clients enter through the JWT-protected gateway on port 8322.
-    uvicorn.run(
-        "main:app",
-        host="127.0.0.1",
-        port=8321,
-        log_level="info",
-    )
+    # A lightweight entry point prevents Windows spawn from importing the API
+    # (and its logging/environment state) inside the inference child.
+    import sys
+    os.execv(sys.executable, [sys.executable, str(Path(__file__).with_name("run_api.py"))])

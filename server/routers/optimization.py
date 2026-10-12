@@ -7,13 +7,20 @@ Endpoints:
 """
 
 import logging
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from service_monitor import observed_executor
 
 logger = logging.getLogger("eflow.routers.optimization")
+
+_optimizer_slots = asyncio.Semaphore(1)
+_optimizer_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="eflow-optimizer")
 
 router = APIRouter(prefix="/api/optimization", tags=["optimization"])
 
@@ -55,8 +62,8 @@ class TaskInput(BaseModel):
 
 
 class OptimizeProposalRequest(BaseModel):
-    tasks: List[TaskInput]
-    employees: List[EmployeeInput]
+    tasks: List[TaskInput] = Field(min_length=1, max_length=500)
+    employees: List[EmployeeInput] = Field(min_length=1, max_length=200)
     profile: str = "balanced"   # "balanced" | "fast_track" | "low_risk"
     budget_cap: Optional[float] = None
     num_generations: int = Field(default=40, ge=10, le=200)
@@ -98,13 +105,14 @@ async def optimize_proposal(body: OptimizeProposalRequest) -> JSONResponse:
         tasks_dicts = [t.model_dump() for t in body.tasks]
         employees_dicts = [e.model_dump() for e in body.employees]
 
-        result = run_proposal_optimization(
-            tasks=tasks_dicts,
-            employees=employees_dicts,
-            profile=body.profile,
-            budget_cap=body.budget_cap,
-            num_generations=body.num_generations,
-        )
+        result = await observed_executor(_optimizer_executor, _optimizer_slots, "pygad", "assign_and_schedule", partial(run_proposal_optimization,
+                tasks=tasks_dicts,
+                employees=employees_dicts,
+                profile=body.profile,
+                budget_cap=body.budget_cap,
+                num_generations=body.num_generations,
+            ), metadata={"tasks": len(tasks_dicts), "employees": len(employees_dicts),
+                         "profile": body.profile, "generations": body.num_generations})
 
         return JSONResponse(content=result)
 
