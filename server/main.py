@@ -55,6 +55,7 @@ from service_status import service_status
 from tunnel_control import request_tunnel_rotation, read_tunnel_state
 
 from request_validation import validate_chat_request as _validate_chat_body
+from network_logging import install_network_logging
 from model_registry import (
     get_model,
     list_all_models,
@@ -215,6 +216,7 @@ ROUTE_PREFIX = "/controlpanelEflow"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    install_network_logging(asyncio.get_running_loop())
     _handler.bind_loop(asyncio.get_running_loop())
     await supabase_log_writer.start()
     logger.info("LLM Backend starting …")
@@ -585,7 +587,14 @@ async def _process_queued_chat(body):
     async def on_chunk(chunk):
         await asyncio.wait_for(channel.put(chunk), timeout=30)
     try:
+        pdf = body.get('pdf_table_enrichment')
+        if pdf:
+            logger.info('PDF table job: %s source tasks, %s source costs; constrained output.',
+                        len(pdf['tasks']), len(pdf.get('costs', [])))
         result = await manager.execute(body, on_chunk=on_chunk if channel else None)
+        if pdf:
+            logger.info('PDF table job completed: source references validated; %s generation calls.',
+                        result.get('timings_ms', {}).get('generation_calls', '?'))
         elapsed_ms = result.get("total_duration", 0) / 1e6
         entry = make_entry(message=f"Chat completion: {body['model']} — {result.get('eval_count', 0)} tokens in {elapsed_ms:.0f}ms",
                            source="chat", log_type=LOG_TYPE_CHAT,

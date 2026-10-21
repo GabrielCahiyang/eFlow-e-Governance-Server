@@ -25,6 +25,18 @@ from proposal_pipeline import (
 
 
 class TestLayaPipeline(unittest.TestCase):
+    def test_quoted_multiline_pdf_details_do_not_stop_at_first_quote(self):
+        detail = '1. Prepare the "3-Year EDSP".\n2. Present the 10-Year Roadmap.\nMethodology: source review and validation'
+        parsed = parse_section_prompt(f'Section title: "Planning"\nDetails: "{detail}"\nSchedule: "Month 1-2"\nAvailable team:\n')
+        self.assertEqual(parsed['section_details'], detail)
+        self.assertEqual(parsed['schedule'], 'Month 1-2')
+
+    def test_pdf_prompt_preserves_source_actions_and_defers_global_budget(self):
+        prompt = build_r1_wbs_prompt('Planning', '1. Kick off\n2. Prepare work plan', 'Month 1', 'The source budget will be reconciled globally.')
+        self.assertIn('Preserve each separately numbered source action', prompt)
+        self.assertIn('return empty budgetLines', prompt)
+        self.assertIn('Subtotals and grand totals are not additional expenses', prompt)
+
     def setUp(self):
         self.sample_employees_text = """- ID: emp-it-1 | Name: Crisostomo Ibarra | Role: Senior Systems Administrator
   Workload: 35% | Skills: Networking, Server Administration, Cybersecurity

@@ -9,7 +9,8 @@ $aiProcessPatterns = @(
     "*Ollama reactjs LLM DeepSeek Integration*server\tunnel_supervisor.py*",
     "*Ollama reactjs LLM DeepSeek Integration*concurrently\dist\bin\concurrently.js*",
     "*Ollama reactjs LLM DeepSeek Integration*node_modules*vite*",
-    "*cloudflared*tunnel*--url http://127.0.0.1:8322*"
+    "*cloudflared*tunnel*--url http://127.0.0.1:8322*",
+    "*cloudflared*tunnel*--url http://127.0.0.1:8323*"
 )
 
 $processes = Get-CimInstance Win32_Process | Where-Object {

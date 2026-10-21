@@ -10,6 +10,7 @@ AI job routes.
 from __future__ import annotations
 
 import logging
+import asyncio
 import os
 import time
 from contextlib import asynccontextmanager
@@ -26,6 +27,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from workspace_gateway_context import checked_workspace_payload
 from staffing_gateway_context import checked_staffing_payload
+from network_logging import install_network_logging
 
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -75,6 +77,10 @@ class WorkspaceDecompositionRequest(BaseModel):
 class WorkspaceStaffingRequest(BaseModel):
     schemaVersion: Literal[1]
     taskId: UUID
+    autoAssign: bool = False
+    projectId: UUID | None = None
+    draftTask: dict[str, Any] | None = None
+    plannedAssignments: list[dict[str, Any]] = Field(default_factory=list, max_length=100)
 
 
 class ChatRequest(BaseModel):
@@ -85,6 +91,7 @@ class ChatRequest(BaseModel):
     request_id: str | None = Field(default=None, min_length=1, max_length=100)
     workspace_decomposition: WorkspaceDecompositionRequest | None = None
     workspace_staffing: WorkspaceStaffingRequest | None = None
+    pdf_table_enrichment: dict[str, Any] | None = None
 
 
 class ProposalValidationRequest(BaseModel):
@@ -215,11 +222,19 @@ async def _require_active_user(request: Request) -> str:
     return user_id
 
 
-async def _read_staffing_context(session, request, task_id):
+async def _read_staffing_context(session, request, task_id, auto_assign=False, draft=None):
     # The full application gateway remains the single source of staffing
     # eligibility. Forward the user's JWT, never the service-role key.
     origin = os.getenv('EFLOW_APP_GATEWAY_ORIGIN', 'http://127.0.0.1:8322').rstrip('/')
+    if draft is not None:
+        async with session.post(f'{origin}/controlpanelEflow/api/staffing/project/{task_id}/context',
+                json=draft, headers={'Authorization': request.headers.get('Authorization', '')}) as response:
+            data = await response.json()
+            if response.status != 200:
+                raise HTTPException(response.status, data.get('detail', 'Import staffing context could not be verified.'))
+            return data
     async with session.get(f'{origin}/controlpanelEflow/api/staffing/{task_id}/context',
+            params={'auto_assign': 'true'} if auto_assign else None,
             headers={'Authorization':request.headers.get('Authorization','')}) as response:
         data = await response.json()
         if response.status != 200:
@@ -240,8 +255,8 @@ async def _proxy_ai_request(
         key = await internal_ai_key.get()
         session = await get_session()
         if payload and payload.get('workspace_staffing') is not None:
-            async def read_context(task_id):
-                return await _read_staffing_context(session, request, task_id)
+            async def read_context(task_id, auto_assign=False, draft=None):
+                return await _read_staffing_context(session, request, task_id, auto_assign=auto_assign, draft=draft)
             payload = await checked_staffing_payload(payload, read_context)
         if payload and payload.get('workspace_decomposition'):
             async def read_rows(table: str, params: dict) -> list:
@@ -300,6 +315,7 @@ async def _proxy_ai_request(
 
 @asynccontextmanager
 async def lifespan(app):
+    install_network_logging(asyncio.get_running_loop())
     yield
     await close_session()
 
@@ -320,11 +336,11 @@ async def health() -> dict[str, str]:
 
 
 @app.get('/controlpanelEflow/api/staffing/{task_id}/context')
-async def staffing_context(task_id: UUID, request: Request):
+async def staffing_context(task_id: UUID, request: Request, auto_assign: bool = False):
     await _require_active_user(request)
     try:
         session = await get_session()
-        return await _read_staffing_context(session,request,str(task_id))
+        return await _read_staffing_context(session,request,str(task_id),auto_assign=auto_assign)
     except (aiohttp.ClientError,TimeoutError) as exc:
         raise HTTPException(503,'The application staffing service is offline.') from exc
 

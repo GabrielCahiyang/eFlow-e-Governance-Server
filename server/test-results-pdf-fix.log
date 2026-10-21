@@ -1,0 +1,111 @@
+2026-10-20 06:12:11,358  INFO      Supabase URL: https://ixnfphgjyelhckjwjkdv.supabase.co
+2026-10-20 06:12:12,880  WARNING   Executing <Task pending name='Task-4' coro=<ApiSchedulingTests.test_health_remains_responsive_during_blocking_inference_and_fifo_admission() running at C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration\server\test_api_scheduling.py:40> cb=[_run_until_complete_cb() at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py:182] created at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py:100> took 0.281 seconds
+2026-10-20 06:12:13,118  WARNING   Executing <Task pending name='starlette.middleware.base.BaseHTTPMiddleware.__call__.<locals>.call_next.<locals>.coro' coro=<BaseHTTPMiddleware.__call__.<locals>.call_next.<locals>.coro() running at C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration\server\.venv\Lib\site-packages\starlette\middleware\base.py:144> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py:449> cb=[TaskGroup._spawn.<locals>.task_done() at C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration\server\.venv\Lib\site-packages\anyio\_backends\_asyncio.py:821] created at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\tasks.py:420> took 0.218 seconds
+2026-10-20 06:12:13,377  WARNING   Executing <Task pending name='Task-12' coro=<_process_queued_chat() running at C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration\server\main.py:590> wait_for=<Future pending cb=[_chain_future.<locals>._call_check_cancel() at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\futures.py:391, Task.task_wakeup()] created at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py:449> cb=[Task.task_wakeup()] created at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\tasks.py:420> took 0.109 seconds
+2026-10-20 06:12:13,446  INFO      HTTP Request: POST http://test/controlpanelEflow/api/jobs "HTTP/1.1 202 Accepted"
+2026-10-20 06:12:13,760  INFO      HTTP Request: GET http://test/controlpanelEflow/api/health "HTTP/1.1 200 OK"
+2026-10-20 06:12:14,107  INFO      HTTP Request: POST http://test/controlpanelEflow/api/jobs "HTTP/1.1 429 Too Many Requests"
+2026-10-20 06:12:14,291  INFO      HTTP Request: DELETE http://test/controlpanelEflow/api/jobs/47fdb03d-e95a-41a1-a564-efbd565f9a06 "HTTP/1.1 200 OK"
+2026-10-20 06:12:18,227  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 200 OK"
+.2026-10-20 06:12:18,584  INFO      HTTP Request: POST http://test/controlpanelEflow/api/jobs "HTTP/1.1 400 Bad Request"
+2026-10-20 06:12:18,742  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 400 Bad Request"
+2026-10-20 06:12:18,906  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 400 Bad Request"
+2026-10-20 06:12:19,074  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 400 Bad Request"
+2026-10-20 06:12:19,233  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 400 Bad Request"
+.2026-10-20 06:12:19,642  INFO      HTTP Request: POST http://test/controlpanelEflow/api/jobs "HTTP/1.1 202 Accepted"
+2026-10-20 06:12:19,691  INFO      HTTP Request: DELETE http://test/controlpanelEflow/api/jobs/22980c31-70da-4b61-b945-7de9a3e9bc32 "HTTP/1.1 404 Not Found"
+2026-10-20 06:12:19,705  INFO      HTTP Request: PUT http://test/controlpanelEflow/api/authkey "HTTP/1.1 401 Unauthorized"
+.2026-10-20 06:12:19,921  INFO      HTTP Request: GET http://test/controlpanelEflow/api/operations "HTTP/1.1 401 Unauthorized"
+2026-10-20 06:12:20,185  INFO      HTTP Request: GET http://test/controlpanelEflow/api/operations "HTTP/1.1 200 OK"
+.2026-10-20 06:12:24,040  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 200 OK"
+........2026-10-20 06:12:25,133  INFO      [Laya] Router successfully initialized with convaiinnovations/laya-typed-decisions
+2026-10-20 06:12:36,408  INFO      HTTP Request: GET https://huggingface.co/api/models/convaiinnovations/laya-typed-decisions/revision/main "HTTP/1.1 200 OK"
+
+Fetching 5 files:   0%|          | 0/5 [00:00<?, ?it/s]
+Fetching 5 files: 100%|##########| 5/5 [00:00<00:00, 5005.14it/s]
+C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration\server\.venv\Lib\site-packages\laya\router.py:456: RuntimeWarning: laya: this checkpoint ships invalid temperatures or values outside [0.5, 5]; using choice:11+=0.10058280825614929 -> 0.5. Treat confidence from the affected entries as uncalibrated.
+  agent = Agent(repo, **kwargs)
+.2026-10-20 06:14:19,045  INFO      routing_and_review completed (287f3997), 9356 ms
+..2026-10-20 06:14:19,049  INFO      [Proposal Pipeline] Decomposing 'Economic Diagnostic' with 2 available team members
+2026-10-20 06:14:26,987  INFO      routing_and_review completed (4ac0dbaf), 7937 ms
+2026-10-20 06:14:27,296  INFO      [PyGAD] Completed optimization in 164ms over 20 generations. Best fitness: 72.38
+2026-10-20 06:14:27,296  INFO      assign_and_schedule completed (00f612e9), 308 ms
+2026-10-20 06:14:27,298  INFO      [Proposal Pipeline] Completed 1 tasks for 'Economic Diagnostic' in 8251ms (DeepSeek R1 + LAYA + PyGAD)
+.....2026-10-20 06:14:27,299  INFO      [Proposal Pipeline] Decomposing 'Part 1' with 0 available team members
+..F2026-10-20 06:14:40,786  INFO      Downloading Test from test/model/upstream.gguf ...
+.2026-10-20 06:14:40,838  INFO      Model qwen3.5:2b already downloaded at C:\Users\gabri\AppData\Local\Temp\tmp1k547xrn\qwen3.5_2b.gguf
+.2026-10-20 06:14:40,845  INFO      Downloading Test from test/model/upstream.gguf ...
+2026-10-20 06:14:40,882  INFO      Downloaded Test \u2192 C:\Users\gabri\AppData\Local\Temp\tmp8m5blpqp\qwen3.5_2b.gguf
+.2026-10-20 06:14:40,890  INFO      Downloading Test from test/model/upstream.gguf ...
+2026-10-20 06:14:40,901  INFO      Downloaded Test \u2192 C:\Users\gabri\AppData\Local\Temp\tmp5jtrf93o\qwen3.5_2b.gguf
+....2026-10-20 06:14:40,914  INFO      PDF table enrichment: 10 source tasks, 16 source costs; constrained output.
+2026-10-20 06:14:40,917  INFO      PDF table enrichment complete: 10 tasks, 16 cost references validated.
+..2026-10-20 06:14:40,924  INFO      PDF table enrichment: 1 source tasks, 0 source costs; constrained output.
+2026-10-20 06:14:40,925  INFO      PDF table enrichment complete: 1 tasks, 0 cost references validated.
+.2026-10-20 06:14:40,927  INFO      PDF table enrichment: 10 source tasks, 16 source costs; constrained output.
+2026-10-20 06:14:40,928  WARNING   PDF table output validation failed (attempt 1/2).
+2026-10-20 06:14:40,942  WARNING   PDF table output validation failed (attempt 2/2).
+2026-10-20 06:14:40,942  INFO      PDF table enrichment: 10 source tasks, 16 source costs; constrained output.
+2026-10-20 06:14:40,943  WARNING   PDF table output validation failed (attempt 1/2).
+2026-10-20 06:14:40,943  WARNING   PDF table output validation failed (attempt 2/2).
+.2026-10-20 06:14:40,954  INFO      PDF table enrichment: 10 source tasks, 16 source costs; constrained output.
+2026-10-20 06:14:40,964  INFO      PDF table enrichment complete: 10 tasks, 16 cost references validated.
+.2026-10-20 06:14:40,980  INFO      PDF table enrichment: 10 source tasks, 16 source costs; constrained output.
+2026-10-20 06:14:40,981  WARNING   PDF table output validation failed (attempt 1/2).
+2026-10-20 06:14:40,981  INFO      PDF table enrichment complete: 10 tasks, 16 cost references validated.
+.2026-10-20 06:14:40,983  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:40,984  INFO      [Polygon] Archival seal anchored for proposal prop-test-001: 0x22db67a65f1238feab667bb7b655f02f5efcc6a59984595dafbfdcd8a11a79c3
+.2026-10-20 06:14:40,985  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:40,985  INFO      [Polygon] Archival seal anchored for proposal prop-test-001: 0x937c99073d5041aa2b260bdea2ff77f76290083d143b48fd5175cf6d6f2b9b5b
+.2026-10-20 06:14:40,986  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:40,987  INFO      [Polygon] Genesis anchored for proposal prop-test-001: 0x6c732f0306280f798681583fa00b2f50843666beacece4856a84b5a2566a90ac
+.2026-10-20 06:14:40,988  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:40,988  INFO      [Polygon] Genesis anchored for proposal prop-test-001: 0xc45299553f0a1619f8088f1e4d6b6625e52c5f8ce5b52972bbffc58c1508d65a
+.2026-10-20 06:14:40,988  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:40,989  INFO      [Polygon] Genesis anchored for proposal prop-test-001: 0x195d106a9fca65c41c8b53651fe70f0cc4c36daa8e4b74cc5a09295b34378502
+.2026-10-20 06:14:40,989  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:40,990  INFO      [Polygon] Genesis anchored for proposal prop-test-001: 0xd82ad26c3e098dbb9ddd7a57791e9683fe2a1f425f6745923b0acc917aa5eda0
+.2026-10-20 06:14:40,990  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:40,990  INFO      [Polygon] Genesis anchored for proposal prop-test-001: 0x14d7c0f7c05d3e57f8f09fc482c719b92f69f6a5f3baaf14aec80775ff7540ee
+.2026-10-20 06:14:40,991  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:40,991  INFO      [Polygon] Genesis anchored for proposal prop-test-001: 0xf5d7a8ffd5c2a1e93002019132272a39ea7a021a43e9db55e59e2bfaa06c8359
+.2026-10-20 06:14:40,992  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:40,992  INFO      [Polygon] Milestone anchored for proposal prop-test-001: bac_clearance \u2192 0x007736ac0210c60621623d57cbfe049a9a4c7c2d10e8af33baa260b785e49a6d
+.2026-10-20 06:14:40,993  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:40,993  INFO      [Polygon] Milestone anchored for proposal prop-001: bac_clearance \u2192 0xf78a0e401ba2c726f6d3b9d21ee654f01d34489299c5f77d38f2e66b59a5b2d7
+2026-10-20 06:14:40,994  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:40,994  INFO      [Polygon] Milestone anchored for proposal prop-001: cash_advance \u2192 0x3ea86fbcef11471b06880ace96bd58a318a56118c12c83d288c32e0631793f92
+.2026-10-20 06:14:40,995  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:40,995  INFO      [Polygon] Genesis anchored for proposal prop-test-001: 0xadfe08d7277bd01ff46b0b533f9f7156bba9ca7324c1213ee80f09c9cac293d1
+..2026-10-20 06:14:40,996  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:40,996  INFO      [Polygon] Genesis anchored for proposal prop-test-001: 0xb07bb963aad522fd717df4329c5f60346f1c75bb914fcf35dc84e93f355c1738
+2026-10-20 06:14:40,996  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:40,997  INFO      [Polygon] Milestone anchored for proposal prop-test-001: bac_clearance \u2192 0x73d7b693728bd57b3412d08d3715d28ff93cff582236bd94164fbff8f6106a7e
+2026-10-20 06:14:40,997  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:40,997  INFO      [Polygon] Archival seal anchored for proposal prop-test-001: 0xeb4410c00e76d9c6ef94134b56abd7f462ba78b365f58af3aa4edb4c968291bd
+......2026-10-20 06:14:41,000  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:41,000  INFO      [Polygon] Genesis anchored for proposal prop-test-001: 0xb3c037e4e8d6d0c5536124482767edfbd5ee1104a3442b666a66e41c657a0c47
+.2026-10-20 06:14:41,001  WARNING   [Polygon] Running in simulation mode - no transaction will be sent.
+2026-10-20 06:14:41,001  INFO      [Polygon] Genesis anchored for proposal prop-test-001: 0x73755c0d5b7cc33cf0b6b4b80f77c5fdc54b4a2b17d6e865840acf4e1655f417
+....2026-10-20 06:14:41,127  INFO      [PyGAD] Completed optimization in 94ms over 10 generations. Best fitness: 63.02
+2026-10-20 06:14:41,129  INFO      assign_and_schedule completed (0a3c20ab), 97 ms
+.2026-10-20 06:14:41,241  INFO      [PyGAD] Completed optimization in 109ms over 10 generations. Best fitness: 81.59
+2026-10-20 06:14:41,241  INFO      assign_and_schedule completed (f69c49b4), 112 ms
+2026-10-20 06:14:41,356  INFO      [PyGAD] Completed optimization in 113ms over 10 generations. Best fitness: 69.59
+2026-10-20 06:14:41,357  INFO      assign_and_schedule completed (47edc0b6), 115 ms
+2026-10-20 06:14:41,468  INFO      [PyGAD] Completed optimization in 109ms over 10 generations. Best fitness: 86.76
+2026-10-20 06:14:41,469  INFO      assign_and_schedule completed (a0ac6209), 111 ms
+.2026-10-20 06:14:41,574  INFO      [PyGAD] Completed optimization in 104ms over 10 generations. Best fitness: 81.59
+2026-10-20 06:14:41,574  INFO      assign_and_schedule completed (fdfa515d), 106 ms
+.2026-10-20 06:14:41,679  INFO      [PyGAD] Completed optimization in 100ms over 10 generations. Best fitness: 86.76
+2026-10-20 06:14:41,679  INFO      assign_and_schedule completed (b7424d74), 104 ms
+.2026-10-20 06:14:41,680  INFO      assign_and_schedule completed (c1be2f2e), 0 ms
+.2026-10-20 06:14:41,840  INFO      [PyGAD] Completed optimization in 159ms over 15 generations. Best fitness: 81.59
+2026-10-20 06:14:41,840  INFO      assign_and_schedule completed (38381066), 160 ms
+.2026-10-20 06:14:42,043  INFO      [PyGAD] Completed optimization in 200ms over 20 generations. Best fitness: 81.59
+2026-10-20 06:14:42,045  INFO      assign_and_schedule completed (94aa5846), 203 ms
+.2026-10-20 06:14:42,162  INFO      [PyGAD] Completed optimization in 114ms over 10 generations. Best fitness: 81.59
+2026-10-20 06:14:42,162  INFO      assign_and_schedule completed (a45e2785), 116 ms
+.2026-10-20 06:14:42,255  INFO      [PyGAD] Completed optimization in 91ms over 10 generations. Best fitness: 81.59
+2026-10-20 06:14:42,256  INFO      assign_and_schedule completed (67a1f7c3), 94 ms
+....................

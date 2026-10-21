@@ -52,7 +52,10 @@ def validate_chat_request(body):
     maximum = body.get("max_tokens")
     if maximum is not None and (isinstance(maximum, bool) or not isinstance(maximum, int) or not 1 <= maximum <= 4096):
         raise ValueError("max_tokens must be between 1 and 4096")
-    if body.get("stream") is True and (body.get("workspace_decomposition") is not None or body.get("workspace_staffing") is not None):
+    modes = ('workspace_decomposition', 'workspace_staffing', 'pdf_table_enrichment')
+    if sum(body.get(mode) is not None for mode in modes) > 1:
+        raise ValueError('Submit one structured AI operation per job')
+    if body.get("stream") is True and any(body.get(mode) is not None for mode in modes):
         raise ValueError("Structured workspace jobs require stream=false")
     if body.get("workspace_decomposition") is not None and body.get("workspace_staffing") is not None:
         raise ValueError("Submit decomposition and staffing as separate jobs")
@@ -60,5 +63,8 @@ def validate_chat_request(body):
         validate_workspace_request(body["workspace_decomposition"])
     if body.get("workspace_staffing") is not None:
         validate_staffing_request(body["workspace_staffing"])
+    if body.get('pdf_table_enrichment') is not None:
+        from pdf_table_enrichment import validate_pdf_table_request
+        validate_pdf_table_request(body['pdf_table_enrichment'])
 
 

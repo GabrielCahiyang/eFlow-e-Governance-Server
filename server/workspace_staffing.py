@@ -41,6 +41,11 @@ def execute_staffing_pipeline(llm, request, model_tag):
               '{"recommendations":[{"userId":"exact candidate id","evidence":["exact supplied skills/training/education/experience/specializations/certifications item"]}]}. '
               'Evidence must quote confirmed profile entries exactly. Never invent a compatibility percentage.')
     started = time.time()
+    if request.get('autoAssign') is True:
+        prompt += (' This is an auto-assignment team selection. Choose only the people needed for this task, '
+                   'not a padded shortlist. Put the best lead first, followed by necessary contributors. '
+                   'You may select anyone in the supplied available directory, including people not yet in the project. '
+                   'Unconfirmed professional details mean unknown skills; cite only the supplied workload fact for those people.')
     # Constrain explanations to each person's confirmed entries at generation
     # time, so small local models cannot paraphrase away the grounding evidence.
     variants = []
