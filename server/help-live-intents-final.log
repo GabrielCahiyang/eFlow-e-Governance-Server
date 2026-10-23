@@ -1,0 +1,34 @@
+.............2026-10-23 21:37:45,231  INFO      Supabase URL: https://ixnfphgjyelhckjwjkdv.supabase.co
+2026-10-23 21:37:45,556  WARNING   Executing <Task finished name='Task-2' coro=<LiveResidencyTests.test_speech_reuses_only_the_tiny_selector_and_releases_qwen() done, defined at C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration\server\test_help_live_model.py:62> result=None created at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py:100> took 0.422 seconds
+.2026-10-23 21:37:45,671  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:37:45,679  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 422 Unprocessable Entity"
+..............2026-10-23 21:37:46,412  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:37:46,424  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 404 Not Found"
+.2026-10-23 21:37:46,445  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:37:46,457  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:37:46,465  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:37:46,473  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 403 Forbidden"
+.2026-10-23 21:37:46,502  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+.2026-10-23 21:37:46,533  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:37:46,543  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:37:46,559  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:37:46,567  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:37:46,574  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 403 Forbidden"
+.2026-10-23 21:37:46,603  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 422 Unprocessable Entity"
+.2026-10-23 21:37:46,633  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:37:46,644  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+2026-10-23 21:37:46,652  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+2026-10-23 21:37:46,658  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+.2026-10-23 21:37:46,684  INFO      HTTP Request: GET http://testserver/api/help-assistant/projects "HTTP/1.1 401 Unauthorized"
+.2026-10-23 21:37:46,709  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+.2026-10-23 21:37:46,747  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:37:46,758  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 409 Conflict"
+.2026-10-23 21:37:46,783  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+2026-10-23 21:37:46,793  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 404 Not Found"
+.2026-10-23 21:37:46,824  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:37:46,837  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 403 Forbidden"
+....
+----------------------------------------------------------------------
+Ran 42 tests in 1.996s
+
+OK

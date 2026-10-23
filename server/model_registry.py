@@ -56,6 +56,17 @@ class ModelEntry:
 
 MODELS: list[ModelEntry] = [
     ModelEntry(
+        tag="lfm2.5:350m", display_name="LFM2.5 350M Live",
+        hf_repo="LiquidAI/LFM2.5-350M-GGUF",
+        hf_filename="LFM2.5-350M-Q8_0.gguf", chat_format=None,
+        n_ctx=4096, description="Small resident eFlow Live source selector",
+        family="lfm2", parameter_size="350M", quantization="Q8_0",
+        size_bytes=379_217_632,
+        hf_revision="657e078c94084481950a2d555a941481f715536b",
+        sha256="be036a757295e550098b85e13f6af2735d0fa73b41e1156a40c7d8e8e32a5766",
+        extra_kwargs={"n_gpu_layers": 99, "n_threads": 6, "n_threads_batch": 6},
+    ),
+    ModelEntry(
         tag="deepseek-r1:8b",
         display_name="DeepSeek R1 8B",
         hf_repo="bartowski/DeepSeek-R1-Distill-Llama-8B-GGUF",

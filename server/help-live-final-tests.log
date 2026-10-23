@@ -1,0 +1,9 @@
+...2026-10-23 21:20:14,280  INFO      Supabase URL: https://ixnfphgjyelhckjwjkdv.supabase.co
+2026-10-23 21:20:14,610  WARNING   Executing <Task finished name='Task-2' coro=<LiveResidencyTests.test_speech_reuses_only_the_tiny_selector_and_releases_qwen() done, defined at C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration\server\test_help_live_model.py:60> result=None created at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py:100> took 0.468 seconds
+.2026-10-23 21:20:14,767  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:20:14,777  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 422 Unprocessable Entity"
+....
+----------------------------------------------------------------------
+Ran 8 tests in 0.676s
+
+OK

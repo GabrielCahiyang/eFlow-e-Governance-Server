@@ -1,0 +1,27 @@
+llama_kv_cache: the V embeddings have different sizes across layers and FA is not enabled - padding V cache to 512
+{"question": "How do I request petty cash?", "topic": "cash", "seconds": 4.704, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "Does setting the task budjet deduct from Office Budget?", "topic": "budget", "seconds": 1.735, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "Does a planning estimate approve money?", "topic": "budget", "seconds": 2.703, "raw": "{\"source_ids\": [\"0\", \"1\", \"2\"]}", "passed": true}
+{"question": "How do I configure and lock the annual fiscal year budget?", "topic": "annual_budget", "seconds": 3.032, "raw": "{\"source_ids\": [\"0\", \"1\", \"2\"]}", "passed": true}
+{"question": "How do I liquidate an advance?", "topic": "settlement", "seconds": 1.719, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "How do I correct a rejected cash request?", "topic": "cash_rejection", "seconds": 1.797, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "When can Accounting release a scheduled tranche?", "topic": "cash_release", "seconds": 1.766, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "Who reviews a conflicted Accounting officer?", "topic": "independent_review", "seconds": 1.64, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "How do I read debit and credit in the General Journal?", "topic": "journal", "seconds": 1.672, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "Can I reopen a completed prerequisite?", "topic": "reopening", "seconds": 1.656, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "What happens to unused commitments after archive?", "topic": "archive", "seconds": 1.641, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "Why does pause stop speech synthesis?", "topic": "live_voice", "seconds": 2.594, "raw": "{\"source_ids\": [\"0\", \"1\", \"2\"]}", "passed": true}
+{"question": "How do I dictate a question without sending it?", "topic": "voice_help", "seconds": 1.672, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "The microphone meter moves but no speech is recognized", "topic": "voice_troubleshooting", "seconds": 1.625, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "How do I invite an employee from another office?", "topic": "invitations", "seconds": 1.547, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "Why can I not delete a group?", "topic": "groups", "seconds": 1.593, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "How does AI auto assign choose people?", "topic": "auto_assignment", "seconds": 1.657, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "How do I review a subtask before its parent completes?", "topic": "subtasks", "seconds": 1.64, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "Where is Gantt for task due dates?", "topic": "schedule", "seconds": 1.562, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "How do I send participation approval requests to offices?", "topic": "participation", "seconds": 1.968, "raw": "{\"source_ids\": [ \"0\"] }", "passed": true}
+{"question": "Does publishing a draft reserve approved budgets?", "topic": "publication", "seconds": 1.875, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "How do I set up and activate a planning project?", "topic": "projects", "seconds": 1.734, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "Where are the project completion requirements?", "topic": "completion", "seconds": 1.938, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}
+{"question": "How do I add the estimated hours column?", "topic": "columns", "seconds": 2.891, "raw": "{\"source_ids\": [\"0\", \"1\", \"2\"]}", "passed": true}
+{"question": "How do I use Inbox notifications?", "topic": "inbox", "seconds": 4.563, "raw": "{\"source_ids\": [\"0\", \"5\", \"6\"]}", "passed": true}
+{"question": "Why is a PDF budget funder not a participating office?", "topic": "offices", "seconds": 2.609, "raw": "{\"source_ids\": [\"0\"]}", "passed": true}

@@ -1,0 +1,56 @@
+2026-10-23 21:42:08,148  INFO      Supabase URL: https://ixnfphgjyelhckjwjkdv.supabase.co
+....2026-10-23 21:42:08,692  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:42:08,702  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 422 Unprocessable Entity"
+..............2026-10-23 21:42:09,514  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:42:09,527  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 404 Not Found"
+.2026-10-23 21:42:09,555  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:42:09,567  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:42:09,574  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:42:09,582  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 403 Forbidden"
+.2026-10-23 21:42:09,612  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+.2026-10-23 21:42:09,652  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:42:09,663  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:42:09,670  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:42:09,678  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:42:09,686  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 403 Forbidden"
+.2026-10-23 21:42:09,714  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 422 Unprocessable Entity"
+.2026-10-23 21:42:09,745  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:42:09,757  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+2026-10-23 21:42:09,765  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+2026-10-23 21:42:09,774  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+.2026-10-23 21:42:09,800  INFO      HTTP Request: GET http://testserver/api/help-assistant/projects "HTTP/1.1 401 Unauthorized"
+.2026-10-23 21:42:09,830  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+.2026-10-23 21:42:09,870  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:42:09,880  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 409 Conflict"
+.2026-10-23 21:42:09,906  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+2026-10-23 21:42:09,915  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 404 Not Found"
+.2026-10-23 21:42:09,947  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:42:09,959  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 403 Forbidden"
+..............2026-10-23 21:42:10,189  INFO      Downloading Test from test/model/upstream.gguf ...
+.2026-10-23 21:42:10,213  INFO      Model qwen3.5:2b already downloaded at C:\Users\gabri\AppData\Local\Temp\tmppk44iv8q\qwen3.5_2b.gguf
+.2026-10-23 21:42:10,221  INFO      Downloading Test from test/model/upstream.gguf ...
+2026-10-23 21:42:10,242  INFO      Downloaded Test \u2192 C:\Users\gabri\AppData\Local\Temp\tmp5d1byx3i\qwen3.5_2b.gguf
+.2026-10-23 21:42:10,251  INFO      Downloading Test from test/model/upstream.gguf ...
+2026-10-23 21:42:10,264  INFO      Downloaded Test \u2192 C:\Users\gabri\AppData\Local\Temp\tmpxfdsoje_\qwen3.5_2b.gguf
+.2026-10-23 21:42:10,606  INFO      HTTP Request: POST http://test/controlpanelEflow/api/jobs "HTTP/1.1 202 Accepted"
+2026-10-23 21:42:10,904  INFO      HTTP Request: GET http://test/controlpanelEflow/api/health "HTTP/1.1 200 OK"
+2026-10-23 21:42:11,074  INFO      HTTP Request: POST http://test/controlpanelEflow/api/jobs "HTTP/1.1 429 Too Many Requests"
+2026-10-23 21:42:11,188  INFO      HTTP Request: DELETE http://test/controlpanelEflow/api/jobs/a201bb47-0804-48ba-9051-7adbd3a875a0 "HTTP/1.1 200 OK"
+2026-10-23 21:42:15,071  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 200 OK"
+.2026-10-23 21:42:15,424  INFO      HTTP Request: POST http://test/controlpanelEflow/api/jobs "HTTP/1.1 400 Bad Request"
+2026-10-23 21:42:15,587  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 400 Bad Request"
+2026-10-23 21:42:15,746  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 400 Bad Request"
+2026-10-23 21:42:15,903  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 400 Bad Request"
+2026-10-23 21:42:16,059  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 400 Bad Request"
+2026-10-23 21:42:16,217  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 400 Bad Request"
+.2026-10-23 21:42:16,594  INFO      HTTP Request: POST http://test/controlpanelEflow/api/jobs "HTTP/1.1 202 Accepted"
+2026-10-23 21:42:16,653  INFO      HTTP Request: DELETE http://test/controlpanelEflow/api/jobs/189d5a78-03b6-40f9-a23b-b24532a82bfc "HTTP/1.1 404 Not Found"
+2026-10-23 21:42:16,671  INFO      HTTP Request: PUT http://test/controlpanelEflow/api/authkey "HTTP/1.1 401 Unauthorized"
+.2026-10-23 21:42:16,935  INFO      HTTP Request: GET http://test/controlpanelEflow/api/operations "HTTP/1.1 401 Unauthorized"
+2026-10-23 21:42:17,229  INFO      HTTP Request: GET http://test/controlpanelEflow/api/operations "HTTP/1.1 200 OK"
+.2026-10-23 21:42:21,318  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 200 OK"
+..............
+----------------------------------------------------------------------
+Ran 64 tests in 41.277s
+
+OK

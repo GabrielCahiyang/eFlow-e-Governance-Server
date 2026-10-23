@@ -1,0 +1,6 @@
+llama_kv_cache: the V embeddings have different sizes across layers and FA is not enabled - padding V cache to 512
+{"question": "How do I request petty cash?", "seconds": 1.312, "passed": true}
+{"question": "Does setting the task budjet deduct from Office Budget?", "seconds": 1.391, "passed": true}
+{"question": "Does a planning estimate approve money?", "seconds": 0.734, "passed": true}
+{"question": "How do I configure and lock the annual fiscal year budget?", "seconds": 0.735, "passed": true}
+{"question": "How do I liquidate an advance?", "seconds": 0.735, "passed": true}

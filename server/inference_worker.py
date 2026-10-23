@@ -18,6 +18,11 @@ def worker_main(connection):
             body = connection.recv()
             if body is None:
                 break
+            if body.get('_unload'):
+                manager.unload()
+                connection.send(('loaded', {'model': None}))
+                connection.send(('result', {'unloaded': True}))
+                continue
             def send(kind, payload):
                 connection.send((kind, payload))
             marker = _progress_reporter.set(lambda progress: send('progress', progress))
@@ -94,6 +99,11 @@ class InferenceWorker:
         async with self._lock:
             await self._reap()
 
+    async def unload(self):
+        """Free model weights for speech while retaining imported native code."""
+        if self.pid:
+            await self.execute({'model': '__unload__', '_unload': True})
+
     async def execute(self, body, on_chunk=None):
         async with self._lock:
             self._start()
@@ -117,6 +127,8 @@ class InferenceWorker:
                     elif kind == 'error':
                         raise ValueError(payload)
                     elif kind == 'result':
+                        if body.get('_unload'):
+                            return payload
                         self._runs.append({'model': body['model'], 'completed_at': time.time(),
                                            'tokens': payload.get('eval_count', 0),
                                            'first_token_ms': payload.get('first_token_ms'),

@@ -233,9 +233,13 @@ async def lifespan(app: FastAPI):
         )
     await job_queue.start()
     await service_status.start()
+    from help_assistant.speech_service import speech as help_speech
+    help_speech.prepare_voice()
     logger.info("FIFO AI job worker started.")
     yield
     await job_queue.stop(drain=False)
+    from help_assistant.speech_service import speech as help_speech
+    await help_speech.close()
     await manager.close()
     await service_status.stop()
     logger.info("LLM Backend shut down.")
@@ -581,6 +585,23 @@ async def chat(request: Request, model_tag: Optional[str] = None):
 
 
 async def _process_queued_chat(body):
+    if body.get('_help_speech'):
+        from help_assistant.speech_service import speech as help_speech
+        # Keep only the tiny selector resident with speech. Larger text
+        # weights must be released on this 16 GB host. FIFO still owns GPU work.
+        from help_assistant.model_policy import speech_needs_unload
+        if speech_needs_unload(manager.loaded_tag):
+            await manager.unload()
+        operation = body['_help_speech']
+        result = await help_speech.native_speech(operation['text'])
+        help_speech.results[operation['id']] = result
+        return {'speech_ready': operation['id']}
+    # Help's small decoder can share VRAM with its 2B selector. Release it for
+    # larger staffing/PDF/general models so existing features keep their budget.
+    if body['model'] not in ('qwen3.5:2b', 'lfm2.5:350m'):
+        from help_assistant.speech_service import speech as help_speech
+        await help_speech.kitten.close()
+        await help_speech.decoder.release_gpu()
     if body["model"] in disabled_models:
         raise PermissionError("This model is disabled")
     channel = _stream_channels.get(body.get("_stream_id"))
@@ -707,6 +728,8 @@ async def _queued_stream(snapshot, owner_id, stream_id, model_tag):
 # ── Mount router under prefix ─────────────────────────────────────────
 
 app.include_router(router, prefix=ROUTE_PREFIX)
+from help_assistant.routes import make_router as make_help_router
+app.include_router(make_help_router(job_queue), prefix=ROUTE_PREFIX)
 
 # ── Mount feature sub-routers ─────────────────────────────────────────
 

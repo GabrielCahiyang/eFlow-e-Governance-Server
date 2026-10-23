@@ -92,6 +92,7 @@ class ChatRequest(BaseModel):
     workspace_decomposition: WorkspaceDecompositionRequest | None = None
     workspace_staffing: WorkspaceStaffingRequest | None = None
     pdf_table_enrichment: dict[str, Any] | None = None
+    pdf_office_extraction: dict[str, Any] | None = None
 
 
 class ProposalValidationRequest(BaseModel):
@@ -275,7 +276,8 @@ async def _proxy_ai_request(
             method,
             f"{INTERNAL_AI_BASE_URL}/{path.lstrip('/')}",
             json=payload,
-            headers={"Authorization": f"Bearer {key}", "X-eFlow-User-Id": user_id},
+            headers={"Authorization": f"Bearer {key}", "X-eFlow-User-Id": user_id,
+                     **({'X-eFlow-Session': _bearer_token(request)} if path.startswith('help-assistant/') else {})},
             timeout=aiohttp.ClientTimeout(total=timeout_seconds, connect=10),
         )
         content_type = upstream.headers.get("content-type", "application/json").split(";", 1)[0]
@@ -343,6 +345,37 @@ async def staffing_context(task_id: UUID, request: Request, auto_assign: bool = 
         return await _read_staffing_context(session,request,str(task_id),auto_assign=auto_assign)
     except (aiohttp.ClientError,TimeoutError) as exc:
         raise HTTPException(503,'The application staffing service is offline.') from exc
+
+
+@app.api_route('/controlpanelEflow/api/help-assistant/{operation}', methods=['GET', 'POST'])
+async def help_assistant(operation: Literal['status', 'projects', 'chat', 'transcribe', 'speech'], request: Request):
+    expected = 'GET' if operation in ('status', 'projects') else 'POST'
+    if request.method != expected:
+        raise HTTPException(405, 'Method not allowed.')
+    payload = None
+    if expected == 'POST':
+        await _require_active_user(request)
+        raw = bytearray()
+        async for chunk in request.stream():
+            raw.extend(chunk)
+            if len(raw) > 1_600_000:
+                raise HTTPException(413, 'This help request is too large.')
+        import json
+        try:
+            payload = json.loads(raw)
+        except ValueError:
+            raise HTTPException(422, 'Send a valid help request.')
+    task = asyncio.create_task(_proxy_ai_request(expected, 'help-assistant/' + operation, request, payload=payload, timeout_seconds=210))
+    try:
+        while not task.done():
+            if await request.is_disconnected():
+                raise asyncio.CancelledError()
+            await asyncio.sleep(.2)
+        return await task
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
 
 @app.post("/controlpanelEflow/api/ai/jobs")

@@ -2,6 +2,10 @@ param()
 
 $repoPath = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $aiProcessPatterns = @(
+    "*Ollama reactjs LLM DeepSeek Integration*server/run_api.py*",
+    "*Ollama reactjs LLM DeepSeek Integration*server/public_gateway.py*",
+    "*Ollama reactjs LLM DeepSeek Integration*server/start.py*",
+    "*Ollama reactjs LLM DeepSeek Integration*server/tunnel_supervisor.py*",
     "*Ollama reactjs LLM DeepSeek Integration*server\main.py*",
     "*Ollama reactjs LLM DeepSeek Integration*server\run_api.py*",
     "*Ollama reactjs LLM DeepSeek Integration*server\public_gateway.py*",
@@ -21,6 +25,7 @@ $processes = Get-CimInstance Win32_Process | Where-Object {
 }
 
 foreach ($process in $processes) {
+    if (-not (Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue)) { continue }
     try {
         & taskkill.exe /F /T /PID $process.ProcessId | Out-Null
         if ($LASTEXITCODE -ne 0) {

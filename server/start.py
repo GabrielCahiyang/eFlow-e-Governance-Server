@@ -16,6 +16,7 @@ This script:
 """
 
 import os
+import json
 import sys
 import subprocess
 import platform
@@ -68,6 +69,16 @@ def _gateway_is_healthy() -> bool:
         with urlopen(_gateway_health_url(), timeout=2) as response:
             return response.status == 200
     except (URLError, OSError):
+        return False
+
+
+def _ai_api_is_healthy() -> bool:
+    """Observe an existing private host; do not adopt or terminate its process."""
+    try:
+        with urlopen('http://127.0.0.1:8321/controlpanelEflow/api/health', timeout=2) as response:
+            payload = json.load(response)
+            return response.status == 200 and isinstance(payload, dict) and payload.get('status') == 'ok'
+    except (URLError, OSError, ValueError):
         return False
 
 
@@ -243,6 +254,7 @@ def supervise_services() -> int:
         name: None for name in commands
     }
     stopping = False
+    borrowed_ai = False
 
     def request_shutdown(_signum=None, _frame=None):
         nonlocal stopping
@@ -258,6 +270,14 @@ def supervise_services() -> int:
                 process = processes[name]
                 if process is not None and process.poll() is None:
                     continue
+                if name == 'AI server' and _ai_api_is_healthy():
+                    if not borrowed_ai:
+                        print('[INFO] Reusing the healthy private AI host on port 8321. It remains owned by its original launcher.', flush=True)
+                    borrowed_ai = True
+                    processes[name] = None
+                    continue
+                if name == 'AI server':
+                    borrowed_ai = False
                 if process is not None:
                     print(
                         f"[RESTART] {name} exited with code {process.returncode}; "

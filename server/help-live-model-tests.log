@@ -1,0 +1,59 @@
+2026-10-23 21:13:09,158  INFO      Supabase URL: https://ixnfphgjyelhckjwjkdv.supabase.co
+..2026-10-23 21:13:09,587  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:13:09,597  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 422 Unprocessable Entity"
+..............2026-10-23 21:13:10,443  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:13:10,455  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 404 Not Found"
+.2026-10-23 21:13:10,488  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:13:10,499  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:13:10,508  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:13:10,517  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 403 Forbidden"
+.2026-10-23 21:13:10,553  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+.2026-10-23 21:13:10,585  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:13:10,597  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:13:10,607  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:13:10,616  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:13:10,631  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 403 Forbidden"
+.2026-10-23 21:13:10,660  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 422 Unprocessable Entity"
+.2026-10-23 21:13:10,692  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:13:10,706  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+2026-10-23 21:13:10,713  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+2026-10-23 21:13:10,722  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+.2026-10-23 21:13:10,792  INFO      HTTP Request: GET http://testserver/api/help-assistant/projects "HTTP/1.1 401 Unauthorized"
+.2026-10-23 21:13:10,856  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+.2026-10-23 21:13:10,909  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:13:10,928  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 409 Conflict"
+.2026-10-23 21:13:11,118  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+2026-10-23 21:13:11,149  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 404 Not Found"
+.2026-10-23 21:13:11,183  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:13:11,196  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 403 Forbidden"
+.............2026-10-23 21:13:11,553  INFO      Downloading Test from test/model/upstream.gguf ...
+.2026-10-23 21:13:11,609  INFO      Model qwen3.5:2b already downloaded at C:\Users\gabri\AppData\Local\Temp\tmp3nft0bzz\qwen3.5_2b.gguf
+.2026-10-23 21:13:11,615  INFO      Downloading Test from test/model/upstream.gguf ...
+2026-10-23 21:13:11,654  INFO      Downloaded Test \u2192 C:\Users\gabri\AppData\Local\Temp\tmpttgekv91\qwen3.5_2b.gguf
+.2026-10-23 21:13:11,661  INFO      Downloading Test from test/model/upstream.gguf ...
+2026-10-23 21:13:11,676  INFO      Downloaded Test \u2192 C:\Users\gabri\AppData\Local\Temp\tmpderyvvog\qwen3.5_2b.gguf
+.2026-10-23 21:13:12,049  WARNING   Executing <Task pending name='Task-196' coro=<ApiSchedulingTests.test_health_remains_responsive_during_blocking_inference_and_fifo_admission() running at C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration\server\test_api_scheduling.py:40> cb=[_run_until_complete_cb() at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py:182] created at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py:100> took 0.313 seconds
+2026-10-23 21:13:12,367  WARNING   Executing <Task pending name='starlette.middleware.base.BaseHTTPMiddleware.__call__.<locals>.call_next.<locals>.coro' coro=<BaseHTTPMiddleware.__call__.<locals>.call_next.<locals>.coro() running at C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration\server\.venv\Lib\site-packages\starlette\middleware\base.py:144> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py:449> cb=[TaskGroup._spawn.<locals>.task_done() at C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration\server\.venv\Lib\site-packages\anyio\_backends\_asyncio.py:821] created at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\tasks.py:420> took 0.297 seconds
+2026-10-23 21:13:12,670  WARNING   Executing <Task pending name='Task-204' coro=<_process_queued_chat() running at C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration\server\main.py:615> wait_for=<Future pending cb=[_chain_future.<locals>._call_check_cancel() at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\futures.py:391, Task.task_wakeup()] created at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py:449> cb=[Task.task_wakeup()] created at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\tasks.py:420> took 0.141 seconds
+2026-10-23 21:13:12,761  INFO      HTTP Request: POST http://test/controlpanelEflow/api/jobs "HTTP/1.1 202 Accepted"
+2026-10-23 21:13:13,127  INFO      HTTP Request: GET http://test/controlpanelEflow/api/health "HTTP/1.1 200 OK"
+2026-10-23 21:13:13,321  INFO      HTTP Request: POST http://test/controlpanelEflow/api/jobs "HTTP/1.1 429 Too Many Requests"
+2026-10-23 21:13:13,439  INFO      HTTP Request: DELETE http://test/controlpanelEflow/api/jobs/64c72638-90eb-4c47-a6bd-34efed782646 "HTTP/1.1 200 OK"
+2026-10-23 21:13:18,065  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 200 OK"
+.2026-10-23 21:13:18,468  INFO      HTTP Request: POST http://test/controlpanelEflow/api/jobs "HTTP/1.1 400 Bad Request"
+2026-10-23 21:13:18,679  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 400 Bad Request"
+2026-10-23 21:13:18,860  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 400 Bad Request"
+2026-10-23 21:13:19,039  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 400 Bad Request"
+2026-10-23 21:13:19,210  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 400 Bad Request"
+2026-10-23 21:13:19,375  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 400 Bad Request"
+.2026-10-23 21:13:19,843  INFO      HTTP Request: POST http://test/controlpanelEflow/api/jobs "HTTP/1.1 202 Accepted"
+2026-10-23 21:13:19,906  INFO      HTTP Request: DELETE http://test/controlpanelEflow/api/jobs/6b808f89-f677-4137-bef8-2bf1907841f9 "HTTP/1.1 404 Not Found"
+2026-10-23 21:13:19,923  INFO      HTTP Request: PUT http://test/controlpanelEflow/api/authkey "HTTP/1.1 401 Unauthorized"
+.2026-10-23 21:13:20,194  INFO      HTTP Request: GET http://test/controlpanelEflow/api/operations "HTTP/1.1 401 Unauthorized"
+2026-10-23 21:13:20,530  INFO      HTTP Request: GET http://test/controlpanelEflow/api/operations "HTTP/1.1 200 OK"
+.2026-10-23 21:13:24,775  INFO      HTTP Request: POST http://test/controlpanelEflow/api/chat "HTTP/1.1 200 OK"
+..............
+----------------------------------------------------------------------
+Ran 61 tests in 45.007s
+
+OK

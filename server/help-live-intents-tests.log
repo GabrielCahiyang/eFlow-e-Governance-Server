@@ -1,0 +1,42 @@
+.........F...2026-10-23 21:36:05,705  INFO      Supabase URL: https://ixnfphgjyelhckjwjkdv.supabase.co
+2026-10-23 21:36:06,067  WARNING   Executing <Task finished name='Task-2' coro=<LiveResidencyTests.test_speech_reuses_only_the_tiny_selector_and_releases_qwen() done, defined at C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration\server\test_help_live_model.py:62> result=None created at C:\Users\gabri\AppData\Local\Programs\Python\Python312\Lib\asyncio\runners.py:100> took 0.484 seconds
+.2026-10-23 21:36:06,197  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:36:06,206  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 422 Unprocessable Entity"
+..............2026-10-23 21:36:07,061  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:36:07,071  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 404 Not Found"
+.2026-10-23 21:36:07,106  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:36:07,120  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:36:07,128  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:36:07,137  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 403 Forbidden"
+.2026-10-23 21:36:07,166  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+.2026-10-23 21:36:07,201  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:36:07,213  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:36:07,229  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:36:07,262  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 200 OK"
+2026-10-23 21:36:07,270  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 403 Forbidden"
+.2026-10-23 21:36:07,306  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 422 Unprocessable Entity"
+.2026-10-23 21:36:07,336  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:36:07,346  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+2026-10-23 21:36:07,354  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+2026-10-23 21:36:07,363  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+.2026-10-23 21:36:07,391  INFO      HTTP Request: GET http://testserver/api/help-assistant/projects "HTTP/1.1 401 Unauthorized"
+.2026-10-23 21:36:07,418  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+.2026-10-23 21:36:07,457  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:36:07,469  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 409 Conflict"
+.2026-10-23 21:36:07,500  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 422 Unprocessable Entity"
+2026-10-23 21:36:07,510  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 404 Not Found"
+.2026-10-23 21:36:07,543  INFO      HTTP Request: POST http://testserver/api/help-assistant/chat "HTTP/1.1 200 OK"
+2026-10-23 21:36:07,557  INFO      HTTP Request: POST http://testserver/api/help-assistant/speech "HTTP/1.1 403 Forbidden"
+....
+======================================================================
+FAIL: test_workflow_questions_receive_relevant_passages_and_pass_the_scope_gate (test_help_knowledge.KnowledgeTests.test_workflow_questions_receive_relevant_passages_and_pass_the_scope_gate) (question='Does publishing a draft reserve approved budgets?')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\gabri\OneDrive\Desktop\Ollama reactjs LLM DeepSeek Integration\server\test_help_knowledge.py", line 46, in test_workflow_questions_receive_relevant_passages_and_pass_the_scope_gate
+    self.assertTrue(any(fact['id'].startswith('guide:' + topic + ':') for fact in facts[:6]), [fact['id'] for fact in facts])
+AssertionError: False is not true : ['guide:budget:3', 'guide:budget:1', 'guide:budget:2']
+
+----------------------------------------------------------------------
+Ran 42 tests in 2.263s
+
+FAILED (failures=1)

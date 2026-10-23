@@ -18,6 +18,10 @@ def fake_inference_process(connection):
     """Real child process with deterministic stalls, failures and stream frames."""
     while True:
         body = connection.recv()
+        if body.get('_unload'):
+            connection.send(('loaded', {'model': None}))
+            connection.send(('result', {'unloaded': True}))
+            continue
         connection.send(('loaded', {'model': body['model']}))
         if body.get('crash'):
             os._exit(2)
@@ -136,6 +140,16 @@ class WorkerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first['pid'], second['pid'])
         self.assertGreater(ticks, 10)
         self.assertEqual(frames[0]['message']['content'], 'hello')
+
+    async def test_unloading_weights_preserves_worker_and_hides_internal_operation(self):
+        await self.worker.execute({'model': 'test'})
+        original = self.worker.pid
+        await self.worker.unload()
+        self.assertEqual(self.worker.pid, original)
+        self.assertIsNone(self.worker.loaded_tag)
+        result = await self.worker.execute({'model': 'test'})
+        self.assertEqual(result['pid'], original)
+        self.assertEqual(len(self.worker.overview()['recent_runs']), 2)
 
     async def test_cancel_reaps_child_then_starts_fresh_worker(self):
         await self.worker.execute({'model': 'test'})

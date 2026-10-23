@@ -52,7 +52,7 @@ def validate_chat_request(body):
     maximum = body.get("max_tokens")
     if maximum is not None and (isinstance(maximum, bool) or not isinstance(maximum, int) or not 1 <= maximum <= 4096):
         raise ValueError("max_tokens must be between 1 and 4096")
-    modes = ('workspace_decomposition', 'workspace_staffing', 'pdf_table_enrichment')
+    modes = ('workspace_decomposition', 'workspace_staffing', 'pdf_table_enrichment', 'pdf_office_extraction')
     if sum(body.get(mode) is not None for mode in modes) > 1:
         raise ValueError('Submit one structured AI operation per job')
     if body.get("stream") is True and any(body.get(mode) is not None for mode in modes):
@@ -66,5 +66,8 @@ def validate_chat_request(body):
     if body.get('pdf_table_enrichment') is not None:
         from pdf_table_enrichment import validate_pdf_table_request
         validate_pdf_table_request(body['pdf_table_enrichment'])
+    if body.get('pdf_office_extraction') is not None:
+        from pdf_offices import validate_office_request
+        validate_office_request(body['pdf_office_extraction'])
 
 

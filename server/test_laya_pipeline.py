@@ -3,6 +3,7 @@
 import json
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ["LAYA_MODE"] = "heuristic"
 
@@ -146,11 +147,14 @@ class TestLayaPipeline(unittest.TestCase):
         self.assertIn("clearanceDecision", enriched)
 
     def test_unmatched_task_requires_manual_routing(self):
-        routing = classify_workflow_routing(
-            "Arrange ordinary items",
-            "Complete miscellaneous work.",
-            [],
-        )
+        # Other API tests load .env in the same interpreter. Scope this
+        # heuristic-only assertion so collection order cannot enable a model.
+        with patch.dict(os.environ, {'LAYA_MODE': 'heuristic'}):
+            routing = classify_workflow_routing(
+                "Arrange ordinary items",
+                "Complete miscellaneous work.",
+                [],
+            )
         self.assertEqual(routing["workflow"], "manual_review_required")
         self.assertTrue(routing["requires_manual_review"])
         self.assertEqual(routing["confidence"], 0.0)

@@ -70,6 +70,7 @@ def execute_job(manager, body, send):
     from workspace_decomposition import execute_workspace_pipeline, validate_workspace_request
     from workspace_staffing import execute_staffing_pipeline, validate_staffing_request
     from pdf_table_enrichment import execute_pdf_table_pipeline, validate_pdf_table_request
+    from pdf_offices import execute_office_pipeline, validate_office_request
 
     tag = body['model']
     entry = get_model(tag)
@@ -81,6 +82,8 @@ def execute_job(manager, body, send):
         validate_staffing_request(body['workspace_staffing'])
     if body.get('pdf_table_enrichment') is not None:
         validate_pdf_table_request(body['pdf_table_enrichment'])
+    if body.get('pdf_office_extraction') is not None:
+        validate_office_request(body['pdf_office_extraction'])
     started = time.perf_counter()
     send('progress', {'stage': 'loading_model', 'message': 'Preparing the AI.'})
     load_ms = manager.load(entry)
@@ -89,6 +92,7 @@ def execute_job(manager, body, send):
                 for m in body.get('messages', [])]
     heavy = (body.get('workspace_decomposition') is not None
              or body.get('pdf_table_enrichment') is not None
+             or body.get('pdf_office_extraction') is not None
              or body.get('workspace_staffing') is not None
              or is_proposal_decomposition_prompt(messages))
     maximum = int(os.getenv('EFLOW_PIPELINE_OUTPUT_TOKENS', '4096') if heavy
@@ -119,6 +123,8 @@ def execute_job(manager, body, send):
         result['first_token_ms'] = first_token_ms
     elif body.get('pdf_table_enrichment') is not None:
         result = execute_pdf_table_pipeline(llm, body['pdf_table_enrichment'], tag)
+    elif body.get('pdf_office_extraction') is not None:
+        result = execute_office_pipeline(llm, body['pdf_office_extraction'], tag)
     elif body.get('workspace_staffing') is not None:
         result = execute_staffing_pipeline(llm, body['workspace_staffing'], tag)
     elif body.get('workspace_decomposition') is not None:
@@ -126,7 +132,13 @@ def execute_job(manager, body, send):
     elif is_proposal_decomposition_prompt(messages):
         result = execute_proposal_pipeline(llm, messages, tag)
     else:
-        response = llm.create_chat_completion(messages=messages, max_tokens=body.get('max_tokens'))
+        options = {}
+        if body.get('_help_selection') is not None:
+            options = {'temperature': 0, 'response_format': {'type': 'json_object', 'schema': {
+                'type': 'object', 'properties': {'source_ids': {'type': 'array', 'items': {'type': 'string', 'enum': body['_help_selection']}, 'maxItems': 1}},
+                'required': ['source_ids'], 'additionalProperties': False,
+            }}}
+        response = llm.create_chat_completion(messages=messages, max_tokens=body.get('max_tokens'), **options)
         result = {'model': tag, 'message': {'role': 'assistant', 'content': response['choices'][0]['message']['content']},
                   'done': True, 'eval_count': response.get('usage', {}).get('completion_tokens', 0),
                   'total_duration': time.time_ns() - generate_started}

@@ -4,6 +4,7 @@ import time
 from proposal_pipeline import extract_json_payload
 from job_queue import report_job_progress
 from request_validation import validate_staffing_request
+from workspace_staffing_review import review_auto_assignment
 
 def normalize_recommendations(payload, context):
     rows = payload.get('recommendations') if isinstance(payload, dict) else None
@@ -65,5 +66,7 @@ def execute_staffing_pipeline(llm, request, model_tag):
          response_format={'type':'json_object','schema':schema})
     raw = response['choices'][0]['message']['content']
     result = normalize_recommendations(extract_json_payload(raw), request['context'])
+    if request.get('autoAssign') is True:
+        result = review_auto_assignment(result, request['context'], model_tag)
     return {'model':model_tag,'message':{'role':'assistant','content':json.dumps(result)},'done':True,
             'total_duration':int((time.time()-started)*1_000_000_000),'eval_count':response.get('usage',{}).get('completion_tokens',0)}

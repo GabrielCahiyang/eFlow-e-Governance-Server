@@ -61,6 +61,10 @@ class ParsedEmployee:
     strengths: list[str] = field(default_factory=list)
     weaknesses: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
+    # Structured staffing supplies hours, not the legacy utilization percentage.
+    remaining_hours: float | None = None
+    unknown_effort_tasks: int = 0
+    active_tasks: int = 0
 
 
 # ─── Municipal Department & Workflow Definitions ────────────────────────
@@ -506,7 +510,9 @@ def match_personnel(
                 score -= 18
 
         # Workload damping
-        if emp.workload >= 80:
+        if emp.remaining_hours is not None:
+            score -= min(24, emp.remaining_hours / 4 + emp.unknown_effort_tasks * 2 + emp.active_tasks * .5)
+        elif emp.workload >= 80:
             score -= 12  # Overload penalty
         elif emp.workload >= 60:
             score -= 5
@@ -519,7 +525,7 @@ def match_personnel(
         scored_candidates.append((score, emp, list(set(matched_skills))))
 
     # Sort descending by score, tie-break by lower workload
-    scored_candidates.sort(key=lambda item: (item[0], -item[1].workload), reverse=True)
+    scored_candidates.sort(key=lambda item: (item[0], -(item[1].remaining_hours if item[1].remaining_hours is not None else item[1].workload)), reverse=True)
 
     top = scored_candidates[0]
     lead = top[1]
@@ -542,9 +548,11 @@ def match_personnel(
             f"supported by {support.name} for collaborative execution. Balanced for capacity."
         )
     else:
+        capacity = (f"{lead.remaining_hours:g} known remaining hours; {lead.unknown_effort_tasks} tasks with unknown effort"
+                    if lead.remaining_hours is not None else f"{lead.workload}%")
         reason = (
             f"Assigned solo to {lead.name} (Role: {lead.role or 'Specialist'} | "
-            f"Fit: {', '.join(top[2]) or 'Qualified'} | Workload: {lead.workload}%)."
+            f"Fit: {', '.join(top[2]) or 'Qualified'} | Workload: {capacity})."
         )
 
     return (recommended_ids, reason)

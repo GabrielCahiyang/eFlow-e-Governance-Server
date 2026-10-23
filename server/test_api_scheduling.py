@@ -80,7 +80,7 @@ class ApiSchedulingTests(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_requests_never_enter_queue(self):
         response = await self.client.post('jobs', json=self.body(max_tokens=100000))
         self.assertEqual(response.status_code, 400)
-        for malformed in ([], self.body(model={}), self.body(stream='false'),
+        for malformed in ([], self.body(model={}), self.body(stream='false'), self.body(_unload=True),
                           self.body(messages=[{'role': [], 'content': 'invalid'}])):
             response = await self.client.post('chat', json=malformed)
             self.assertEqual(response.status_code, 400)

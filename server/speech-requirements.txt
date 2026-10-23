@@ -1,0 +1,8 @@
+# Dedicated server/.speech-venv only. Keep the existing model environment intact.
+kitten-tts-cpp==0.2.0
+fastapi==0.119.1
+aiohttp==3.13.5
+uvicorn==0.38.0
+numpy==2.2.6
+cmake==3.31.6
+ninja==1.11.1.4
