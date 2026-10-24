@@ -13,6 +13,7 @@ from .speech_service import speech
 from .spoken_reply import spoken_summary, spoken_parts
 from .speech_cache import SpeechCache
 from .model_policy import CHAT_MODEL, LIVE_MODEL, model_for
+from .job_completion import wait_for_job
 
 class Question(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -80,14 +81,8 @@ def make_router(queue):
                 except ValueError as exc:
                     raise HTTPException(429, 'The AI queue is busy. Please try again shortly.') from exc
                 job_id = snapshot['job_id']
-                deadline = time.monotonic() + 180
-                while snapshot['status'] in ('queued', 'processing'):
-                    if await request.is_disconnected():
-                        raise asyncio.CancelledError()
-                    if time.monotonic() > deadline:
-                        raise HTTPException(504, 'Help is taking too long. Please try again shortly.')
-                    await asyncio.sleep(.25)
-                    snapshot = await queue.snapshot(job_id, owner)
+                snapshot = await wait_for_job(queue, snapshot, owner, request, 180,
+                                              'Help is taking too long. Please try again shortly.')
                 if snapshot['status'] != 'completed':
                     raise HTTPException(503, 'The AI could not finish this reply. Please try again.')
                 answer = grounded_answer(snapshot['result']['message']['content'], facts, selected_model)
@@ -150,14 +145,8 @@ def make_router(queue):
         except ValueError as exc:
             raise HTTPException(429, 'The AI queue is busy. The written answer is available.') from exc
         try:
-            deadline = time.monotonic() + 190
-            while job['status'] in ('queued', 'processing'):
-                if await request.is_disconnected():
-                    raise asyncio.CancelledError()
-                if time.monotonic() > deadline:
-                    raise HTTPException(504, 'Speech is taking too long. The written answer is available.')
-                await asyncio.sleep(.25)
-                job = await queue.snapshot(job['job_id'], owner)
+            job = await wait_for_job(queue, job, owner, request, 190,
+                                     'Speech is taking too long. The written answer is available.')
             if job['status'] != 'completed' or operation not in speech.results:
                 raise HTTPException(503, 'Speech could not finish. The written answer is available.')
             await current.verify(owner)

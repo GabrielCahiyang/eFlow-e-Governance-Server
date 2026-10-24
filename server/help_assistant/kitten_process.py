@@ -4,11 +4,13 @@ import json
 import os
 from pathlib import Path
 import re
+import time
 from .decoder_process import reap
 
 class KittenProcess:
     def __init__(self):
         self.process = None
+        self.last_timing = {}
 
     async def close(self):
         process, self.process = self.process, None
@@ -21,6 +23,9 @@ class KittenProcess:
                 continue
 
     async def generate(self, text, report, environment):
+        started = time.monotonic()
+        self.last_timing = {}
+        cold = not self.process or self.process.returncode is not None
         root = Path(__file__).resolve().parents[1]
         binary = Path.home() / '.cache' / 'eflow-speech' / 'build-compat' / 'eflow-kitten-worker.exe'
         cache = root.parent / '.cache' / 'kitten-tts'
@@ -40,11 +45,15 @@ class KittenProcess:
                     diagnostics.seek(max(offset, diagnostics.tell() - 64_000))
                     if not re.search(rb'offloaded [1-9]\d*/[1-9]\d* layers to GPU', diagnostics.read(64_000)):
                         raise RuntimeError('Speech GPU acceleration is unavailable')
+            ready = time.monotonic()
             self.process.stdin.write((json.dumps({'text': text, 'report': str(report)}) + '\n').encode())
             await self.process.stdin.drain()
             line = await asyncio.wait_for(self.process.stdout.readline(), 120)
             if not line or not json.loads(line).get('complete') or not Path(report).exists():
                 raise RuntimeError('Kitten-TTS 2 could not finish this reply')
+            self.last_timing = {'worker_start_seconds': ready - started if cold else 0,
+                                'generation_seconds': time.monotonic() - ready,
+                                'cold_worker': cold}
         except BaseException:
             await self.close()
             raise

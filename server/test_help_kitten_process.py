@@ -14,8 +14,12 @@ class KittenProcessTests(unittest.IsolatedAsyncioTestCase):
         log.return_value.tell.return_value = 0
         with patch('asyncio.create_subprocess_exec', new=AsyncMock(return_value=process)) as spawn, patch.object(Path, 'open', log), patch.object(Path, 'exists', return_value=True), patch('help_assistant.kitten_process.reap', new=AsyncMock()) as reap:
             await runtime.generate('Open the project.', 'one.json', {})
+            self.assertTrue(runtime.last_timing['cold_worker'])
             await runtime.generate('Check the task.', 'two.json', {})
+            self.assertFalse(runtime.last_timing['cold_worker'])
+            self.assertEqual(runtime.last_timing['worker_start_seconds'], 0)
             spawn.assert_awaited_once()
+            self.assertTrue(any(str(arg).endswith('model-gpu-f16.gguf') for arg in spawn.call_args.args))
             self.assertEqual(process.stdin.write.call_count, 2)
             reap.assert_not_called()
             await runtime.close()

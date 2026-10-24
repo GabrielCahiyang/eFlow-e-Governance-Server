@@ -38,3 +38,5 @@ server/help-latency-regression.log
 server/help-kit-worker-regression.log
 server/help-speech-lifecycle-check.log
 server/help-control-fields-check.log
+# Duration-only local voice diagnostics.
+server/help-latency.jsonl

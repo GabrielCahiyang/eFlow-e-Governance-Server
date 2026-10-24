@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from http_client import get_session
 from .decoder_process import DecoderProcess, reap
 from .kitten_process import KittenProcess
+from .latency import record_latency
 
 class SpeechService:
     def __init__(self):
@@ -26,6 +27,8 @@ class SpeechService:
         self.port = None
         self.start_lock = asyncio.Lock()
         self.busy = asyncio.Lock()
+        self.waiting_transcriptions = 0
+        self.admitted_calls = 0
         self.results = {}
         self.decoder = DecoderProcess()
         self.kitten = KittenProcess()
@@ -93,7 +96,7 @@ class SpeechService:
                 decoded = await self.decoder.decode(report, target, environment)
                 try:
                     with (root / 'speech-latency.jsonl').open('a', encoding='utf-8') as timing:
-                        timing.write(json.dumps({'characters': len(text), 'tokens_seconds': round(token_seconds, 3), 'decoder_seconds': round(decoded['seconds'], 3), 'total_seconds': round(time.monotonic() - started, 3), 'audio_seconds': decoded['audio_seconds']}) + '\n')
+                        timing.write(json.dumps({'schema': 2, 'characters': len(text), 'tokens_seconds': round(token_seconds, 3), 'speech_tokens_seconds': round(token_seconds, 3), **self.kitten.last_timing, 'decoder_seconds': round(decoded['seconds'], 3), 'total_seconds': round(time.monotonic() - started, 3), 'audio_seconds': decoded['audio_seconds']}) + '\n')
                 except OSError:
                     logging.getLogger(__name__).warning('Could not record speech timing')
                 audio = target.read_bytes()
@@ -138,9 +141,30 @@ class SpeechService:
     async def call(self, operation, payload):
         if operation != 'warmup' and self.asr_warmup and not self.asr_warmup.done():
             await asyncio.shield(self.asr_warmup)
-        if self.busy.locked():
+        # An aborted browser preview can still be finishing in the CPU worker.
+        # Admit one following final instead of losing it to a transient 429.
+        queued = self.busy.locked() or self.admitted_calls > 0
+        if queued and (operation != 'transcribe' or self.waiting_transcriptions):
             raise HTTPException(429, 'Speech is busy. Please try again shortly.')
-        async with self.busy:
+        if queued:
+            self.waiting_transcriptions += 1
+        self.admitted_calls += 1
+        waiting_at = time.monotonic()
+        try:
+            # Keep acquisition in this task: cancelling a separate acquire task
+            # at the instant it wins a lock can otherwise strand the lock.
+            async with asyncio.timeout(180):
+                await self.busy.acquire()
+        except BaseException as exc:
+            self.admitted_calls -= 1
+            if isinstance(exc, TimeoutError):
+                raise HTTPException(503, 'Speech processing timed out. Typed help is available.') from exc
+            raise
+        finally:
+            if queued:
+                self.waiting_transcriptions -= 1
+        acquired_at = time.monotonic()
+        try:
             await self.start()
             session = await get_session()
             try:
@@ -151,6 +175,12 @@ class SpeechService:
             except (aiohttp.ClientError, TimeoutError) as exc:
                 await self.close_asr()
                 raise HTTPException(503, 'Speech processing timed out. Typed help is available.') from exc
+        finally:
+            record_latency('asr' if operation == 'transcribe' else 'asr_warmup',
+                           admission_wait_seconds=acquired_at-waiting_at,
+                           worker_seconds=time.monotonic()-acquired_at)
+            self.busy.release()
+            self.admitted_calls -= 1
 
     async def close(self):
         if self.asr_warmup and self.asr_warmup is not asyncio.current_task():

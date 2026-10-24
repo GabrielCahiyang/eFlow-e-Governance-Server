@@ -4,6 +4,11 @@ import os
 from pathlib import Path
 import socket
 import aiohttp
+import time
+try:
+    from .latency import record_latency
+except ImportError:
+    from latency import record_latency
 
 
 class ParakeetRuntime:
@@ -56,7 +61,9 @@ class ParakeetRuntime:
         raise RuntimeError('Parakeet could not start. Check the AI server speech log.')
 
     async def transcribe(self, audio):
+        started = time.monotonic()
         await self.start()
+        ready = time.monotonic()
         form = aiohttp.FormData()
         form.add_field('file', audio, filename='turn.wav', content_type='audio/wav')
         try:
@@ -69,3 +76,6 @@ class ParakeetRuntime:
         except BaseException:
             await self.close()
             raise
+        finally:
+            record_latency('parakeet', startup_seconds=ready-started,
+                           inference_http_seconds=time.monotonic()-ready, audio_bytes=len(audio))
